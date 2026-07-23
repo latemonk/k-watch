@@ -10,10 +10,10 @@
     "energy": 18
   },
   "variantCount": 6,
-  "componentTopLevelTsFiles": 168,
+  "componentTopLevelTsFiles": 169,
   "serviceTopLevelEntries": 205,
-  "apiEndpointEntries": 114,
-  "panelClasses": 110,
+  "apiEndpointEntries": 115,
+  "panelClasses": 111,
   "protoFiles": 284,
   "protoServices": 35,
   "protoDomainFolders": 36,
