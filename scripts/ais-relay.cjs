@@ -7790,7 +7790,20 @@ function ingestVesselApiPosition(v) {
   // 병행 모드: aisstream 웹소켓이 살아 있고 이 선박을 이미 스트림으로 받고
   // 있으면 건너뛴다 — 스윕/재주입 데이터(최대 4시간 묵음)가 초 단위 스트림
   // 위치를 과거로 되돌리는 것을 막는다. 스트림에 없는 선박(수신망 밖)만 보강.
-  if (upstreamSocket?.readyState === WebSocket.OPEN && vessels.has(mmsi)) return false;
+  //
+  // ⚠07-23 실측 근본수정: aisstream 이 순단(silent)돼도 소켓은 OPEN 으로
+  // 남고 `vessels` 맵의 옛 항목은 만료되지 않는다. 예전 로직은 이때도
+  // `vessels.has(mmsi)` 만 보고 VesselAPI 백업을 전부 스킵 → tankerReports 가
+  // 30분 후 비고 선박 레이어가 통째로 사라졌다(스윕은 신선 데이터를 캐시에
+  // 넣는데도 화면 0척). 기존 항목이 STALE(초 단위 스트림이 실제로 살아있지
+  // 않음)이면 스킵하지 말고 VesselAPI 로 갱신한다.
+  const VESSEL_STREAM_FRESH_MS = 120_000; // 2분 — 초 단위 스트림이면 항상 이보다 최신
+  if (upstreamSocket?.readyState === WebSocket.OPEN) {
+    const existing = vessels.get(mmsi);
+    if (existing && Number.isFinite(existing.timestamp) && (Date.now() - existing.timestamp) < VESSEL_STREAM_FRESH_MS) {
+      return false; // 스트림이 실제로 이 배를 최근 갱신 중 — 덮어쓰지 않는다
+    }
+  }
   const name = String(v.vessel_name || v.vesselName || '').trim();
   const shipType = Number(v.shipType ?? v.vesselType ?? v.type);
   if (Number.isFinite(shipType) || name) {
