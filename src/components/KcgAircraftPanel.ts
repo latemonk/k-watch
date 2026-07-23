@@ -14,7 +14,8 @@ import { showToast } from '@/utils/toast';
 // 한반도 권역 bbox (제주~휴전선, 서해~동해). track-aircraft 는 중심점+반경으로
 // 변환해 커뮤니티 ADS-B point 조회를 돈다.
 const KOREA_BBOX = { swLat: 33.0, swLon: 124.0, neLat: 39.2, neLon: 131.5 };
-const REFRESH_MS = 10_000;
+// KCG fork(07-23 사장님: 살아있는 느낌) 10s→5s. adsb.lol 무키라 부담 적음.
+const REFRESH_MS = 5_000;
 
 // 스쿼크 비상 코드(하이재킹/통신두절/일반비상).
 const EMERGENCY_SQUAWKS = new Set(['7500', '7600', '7700']);
@@ -91,7 +92,7 @@ export class KcgAircraftPanel extends Panel {
       <div class="kca-stat ${cls}"><div class="kca-stat-v">${String(value)}</div><div class="kca-stat-l">${label}</div></div>`;
 
     this.setSafeContent(safeHtml`
-      <div class="kca-total">권역 <strong>${String(this.positions.length)}대</strong> 포착 · 10초 갱신 · 편명 클릭=지도 포커스</div>
+      <div class="kca-total">권역 <strong>${String(this.positions.length)}대</strong> 포착 · 5초 갱신 · 편명 클릭=지도 포커스</div>
       <div class="kca-stats">
         ${stat('공중', airborne.length)}
         ${stat('지상', ground.length)}

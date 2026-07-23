@@ -12,7 +12,7 @@ import { CHROME_UA } from '../../../_shared/constants';
 // 기준인데, 이 포크의 실제 소스는 커뮤니티 ADS-B(adsb.lol·airplanes.live)라
 // 그 제약이 없다. 항공 감시를 adsb.lol 수준의 실시간(클라 10s 폴링)으로
 // 만들기 위한 최소 TTL — 뷰포트당 10초에 1회 업스트림 호출이라 예의 범위.
-const CACHE_TTL = 10;
+const CACHE_TTL = 5; // KCG fork(07-23): 10→5s, 공역 현황 패널·추적 카드 실시간감 강화
 // Callsign searches hit the relay's in-memory index (5min TTL); cache positive hits 60s,
 // negative hits 10s so a retry after panning into view returns fresh data quickly.
 const CALLSIGN_CACHE_TTL = 60;

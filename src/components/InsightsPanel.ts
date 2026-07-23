@@ -132,7 +132,8 @@ export class InsightsPanel extends Panel {
       showKcgModal('세계 브리프 — 전문', safeHtml`
         <div style="font-size:13.5px;line-height:1.8;margin-bottom:14px">${this.cachedBrief}</div>
         ${sources.length ? safeHtml`
-          <div style="color:#7fd4ff;font-weight:600;margin-bottom:6px">출처 (${String(sources.length)})</div>
+          <div style="color:#7fd4ff;font-weight:600;margin-bottom:6px">브리프에 반영된 뉴스 (${String(sources.length)})</div>
+          <div style="color:#7a8b99;font-size:11px;margin:-2px 0 6px">이 시간대 분석한 주요 헤드라인이에요. 요약은 이들을 종합한 것이라 개별 기사와 초점이 다를 수 있어요.</div>
           <ul style="padding-left:18px;line-height:1.8">${joinSafeHtml(sources.map((src) => {
             const url = typeof src.url === 'string' && /^https?:\/\//.test(src.url) ? src.url : '';
             return url
@@ -250,7 +251,8 @@ export class InsightsPanel extends Panel {
     showKcgModal(title, safeHtml`
       <div style="font-size:13.5px;line-height:1.8;margin-bottom:14px">${entry.text}</div>
       ${items.length ? safeHtml`
-        <div style="color:#7fd4ff;font-weight:600;margin-bottom:6px">근거 기사 (${String(items.length)})</div>
+        <div style="color:#7fd4ff;font-weight:600;margin-bottom:6px">브리프에 반영된 뉴스 (${String(items.length)})</div>
+        <div style="color:#7a8b99;font-size:11px;margin:-2px 0 6px">이 시간대 해당 주제로 수집된 헤드라인이에요. 요약은 이들을 종합한 것이라 개별 기사와 초점이 다를 수 있어요.</div>
         <ul style="padding-left:18px;line-height:1.8">${joinSafeHtml(items.map((item) => {
           const url = typeof item.link === 'string' && /^https?:\/\//.test(item.link) ? item.link : '';
           return url
