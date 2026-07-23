@@ -132,7 +132,9 @@ function iwxxmNum(xml, tag) {
 }
 
 function parseIwxxmMetar(icao, xml) {
-  const visM = iwxxmNum(xml, "prevailingVisibility");
+  let visM = iwxxmNum(xml, "prevailingVisibility");
+  // CAVOK 이면 IWXXM 이 시정 요소를 생략한다 — 10km+ 로 간주.
+  if (visM === null && /cloudAndVisibilityOK="true"/.test(xml)) visM = 10000;
   // 운고 = BKN/OVC 최저운저. CloudLayer 블록에서 amount 코드와 base 를 짝지음.
   let ceilFt = null;
   const parts = [];
