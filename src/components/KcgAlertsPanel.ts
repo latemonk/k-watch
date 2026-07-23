@@ -9,6 +9,9 @@ import { Panel } from './Panel';
 import { safeHtml, joinSafeHtml, type SafeHtml } from '@/utils/sanitize';
 import { getKcgAlertEngine, type KcgAlertSettings, type KcgVerdict } from '@/services/kcg-alerts';
 import { showKcgModal } from '@/utils/kcg-modal';
+import { showToast } from '@/utils/toast';
+import { fetchLiveTankers } from '@/services/live-tankers';
+import { fetchAircraftPositions } from '@/services/aviation';
 
 const SEV_LABEL: Record<string, string> = {
   info: '정보',
@@ -246,9 +249,87 @@ export class KcgAlertsPanel extends Panel {
     showKcgModal(`AI 판정 상세 — ${v.anomaly_score}점 · ${SEV_LABEL[v.severity] ?? v.severity}`, safeHtml`
       <div style="font-weight:700;font-size:14px;margin-bottom:8px">${v.headline}</div>
       <div style="color:#9ab;font-size:11px;margin-bottom:12px">판정 시각 ${at ? at.toLocaleString('ko-KR', { hour12: false }) : '—'} · 신뢰도 ${v.confidence} · 모델 ${v.model ?? '—'}</div>
-      ${v.changes.length ? safeHtml`<div style="margin-bottom:12px"><div style="color:#7fd4ff;font-weight:600;margin-bottom:4px">변화·근거</div><ul style="padding-left:18px;line-height:1.7">${joinSafeHtml(v.changes.map((c) => safeHtml`<li>${c}</li>`))}</ul></div>` : safeHtml``}
+      ${v.changes.length ? safeHtml`<div style="margin-bottom:12px"><div style="color:#7fd4ff;font-weight:600;margin-bottom:4px">변화·근거</div><ul class="kcg-verdict-changes" style="padding-left:18px;line-height:1.7">${joinSafeHtml(v.changes.map((c) => safeHtml`<li>${c}</li>`))}</ul></div>` : safeHtml``}
       ${v.caveats ? safeHtml`<div style="margin-bottom:12px"><div style="color:#7fd4ff;font-weight:600;margin-bottom:4px">유의점</div><div style="color:#bcd">${v.caveats}</div></div>` : safeHtml``}
       ${st.lastSummary ? safeHtml`<details><summary style="cursor:pointer;color:#9ab">판정에 사용된 집계 요약 보기</summary><pre style="white-space:pre-wrap;font-size:11px;color:#9db4c4;background:rgba(255,255,255,0.03);padding:10px;border-radius:6px;margin-top:6px">${st.lastSummary}</pre></details>` : safeHtml``}
     `);
+    // KCG fork(07-23 사장님 지시): 변화·근거 텍스트에 등장하는 선박명·항공기
+    // 편명을 클릭하면 지도가 해당 위치로 이동. 현재 스냅샷에서 이름→좌표
+    // 인덱스를 만들고, 텍스트 노드만 감싸 XSS 없이 링크화한다.
+    void this.linkifyVerdictEntities();
+  }
+
+  /** 현재 선박·항공기 스냅샷에서 이름→좌표 인덱스를 만들어 모달 텍스트를 링크화. */
+  private async linkifyVerdictEntities(): Promise<void> {
+    const overlay = document.querySelector('.kcg-modal-overlay');
+    const ul = overlay?.querySelector('.kcg-verdict-changes');
+    if (!ul) return;
+    interface Ent { name: string; lat: number; lon: number; kind: 'vessel' | 'aircraft'; icao?: string }
+    const ents: Ent[] = [];
+    try {
+      const zones = await fetchLiveTankers();
+      const seen = new Set<string>();
+      for (const z of zones) {
+        for (const t of z.tankers) {
+          const nm = (t.name || '').trim().toUpperCase();
+          if (nm.length >= 4 && !seen.has(nm)) { seen.add(nm); ents.push({ name: nm, lat: t.lat, lon: t.lon, kind: 'vessel' }); }
+        }
+      }
+    } catch { /* 선박 없으면 항공만 */ }
+    try {
+      const acs = await fetchAircraftPositions({ swLat: 33, swLon: 124, neLat: 39.2, neLon: 131.5 });
+      const seen = new Set<string>();
+      for (const a of acs) {
+        const cs = (a.callsign || '').trim().toUpperCase();
+        if (cs.length >= 3 && !seen.has(cs)) { seen.add(cs); ents.push({ name: cs, lat: a.lat, lon: a.lon, kind: 'aircraft', icao: a.icao24 }); }
+      }
+    } catch { /* ignore */ }
+    if (ents.length === 0) return;
+    // 긴 이름 우선(부분 매칭 방지).
+    ents.sort((a, b) => b.name.length - a.name.length);
+    if (!overlay || !overlay.contains(ul)) return;
+
+    const linkify = (node: Text): void => {
+      const text = node.textContent ?? '';
+      const upper = text.toUpperCase();
+      let matchAt = -1; let matched: Ent | null = null;
+      for (const e of ents) {
+        const idx = upper.indexOf(e.name);
+        if (idx !== -1 && (matchAt === -1 || idx < matchAt)) { matchAt = idx; matched = e; }
+      }
+      if (matchAt === -1 || !matched) return;
+      const before = text.slice(0, matchAt);
+      const hit = text.slice(matchAt, matchAt + matched.name.length);
+      const after = text.slice(matchAt + matched.name.length);
+      const frag = document.createDocumentFragment();
+      if (before) frag.append(document.createTextNode(before));
+      const span = document.createElement('span');
+      span.textContent = hit;
+      span.style.cssText = 'color:#7fd4ff;cursor:pointer;text-decoration:underline;text-underline-offset:2px;';
+      span.title = '지도에서 보기';
+      const ent = matched;
+      span.addEventListener('click', () => {
+        try {
+          window.dispatchEvent(new CustomEvent('kcg:map-focus', { detail: { lat: ent.lat, lon: ent.lon, zoom: 9 } }));
+          if (ent.kind === 'aircraft' && ent.icao) {
+            window.dispatchEvent(new CustomEvent('kcg:highlight-aircraft', { detail: { icao24: ent.icao, lat: ent.lat, lon: ent.lon } }));
+            window.dispatchEvent(new CustomEvent('kcg:select-aircraft', { detail: { icao24: ent.icao, lat: ent.lat, lon: ent.lon } }));
+          }
+          showToast(ent.kind === 'aircraft' ? '지도를 해당 항공기로 옮겼어요' : '지도를 해당 선박으로 옮겼어요');
+        } catch { /* SSR/테스트 */ }
+      });
+      frag.append(span);
+      const tail = document.createTextNode(after);
+      frag.append(tail);
+      node.replaceWith(frag);
+      // 나머지 텍스트(after)에도 다른 이름이 있을 수 있어 이어서 처리.
+      linkify(tail);
+    };
+
+    for (const li of Array.from(ul.querySelectorAll('li'))) {
+      for (const child of Array.from(li.childNodes)) {
+        if (child.nodeType === Node.TEXT_NODE) linkify(child as Text);
+      }
+    }
   }
 }
