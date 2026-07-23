@@ -20,6 +20,16 @@ import { dirname, join } from 'node:path';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => readFileSync(join(ROOT, p), 'utf8');
+// KCG fork: 업스트림의 공개 MCP 가이드 페이지(public/mcp-server.md)는
+// 디브랜딩 때 제거됨. 파일이 있으면 업스트림과 동일하게 검사하고, 없으면
+// 해당 클레임/문서쌍만 건너뛴다(다른 문서 드리프트 검사는 그대로 유지).
+const readOptional = (p) => {
+  try {
+    return read(p);
+  } catch {
+    return null;
+  }
+};
 const dirsIn = (p) =>
   readdirSync(join(ROOT, p), { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name);
 const filesIn = (p) =>
@@ -454,7 +464,10 @@ function claims(s) {
     { file: 'docs/mcp-apps.mdx', re: /current fleet ships (\d+)\s+MCP Apps/, value: s.mcpAppCount },
     { file: 'docs/mcp-quickstart.mdx', re: /WorldMonitor exposes (\d+)\s+live tools/, value: s.mcpToolCount },
     { file: 'docs/mcp-quickstart.mdx', re: /receives (\d+)\s+compressed tool descriptions/, value: s.mcpToolCount },
-    { file: 'public/mcp-server.md', re: /server ships \*\*(\d+)\s+tools\*\*/, value: s.mcpToolCount },
+    // KCG fork: public/mcp-server.md 부재 시 클레임 제외 (readOptional 주석 참고)
+    ...(readOptional('public/mcp-server.md') !== null
+      ? [{ file: 'public/mcp-server.md', re: /server ships \*\*(\d+)\s+tools\*\*/, value: s.mcpToolCount }]
+      : []),
 
     { file: 'docs/data-sources.mdx', re: /monitors (\d+)\s+data sources/, value: s.freshnessSources },
     { file: 'docs/data-sources.mdx', re: /across (\d+)\s+monitored airports/, value: s.airportCount },
@@ -515,7 +528,7 @@ function validateMcpAppsDocs(stats) {
   const failures = [];
   const docsPage = read('docs/mcp-apps.mdx');
   const overview = read('docs/mcp-overview.mdx');
-  const publicMcp = read('public/mcp-server.md');
+  const publicMcp = readOptional('public/mcp-server.md');
   const docsJson = parseJson('docs/docs.json');
   const serverCard = parseJson('public/.well-known/mcp/server-card.json');
 
@@ -551,7 +564,7 @@ function validateMcpAppsDocs(stats) {
     for (const [file, text] of [
       ['docs/mcp-apps.mdx', docsPage],
       ['docs/mcp-overview.mdx', overview],
-      ['public/mcp-server.md', publicMcp],
+      ...(publicMcp !== null ? [['public/mcp-server.md', publicMcp]] : []),
     ]) {
       if (!text.includes(uri)) failures.push(`${file}: missing MCP Apps ui resource ${uri}`);
       if (!text.includes(tool)) failures.push(`${file}: missing MCP Apps linked tool ${tool}`);

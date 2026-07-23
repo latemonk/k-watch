@@ -26,6 +26,7 @@ tests/country-port-activity.test.mjs
 tests/debugbear-rum.test.mts
 tests/deploy-config.test.mjs
 tests/docs-signal-alignment.test.mts
+tests/documentation-alignment-guardrails.test.mjs
 tests/edge-functions.test.mjs
 tests/empty-200-degradation-handlers.test.mts
 tests/feeds-client-server-parity.test.mjs

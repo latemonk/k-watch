@@ -101,8 +101,11 @@ jobs:
             git status --porcelain -- docs/generated/stats.json
             exit 1
           fi
-      - name: Doc claims match code
-        run: node scripts/docs-stats.mjs --check
+      # KCG fork: the `--check` claim-drift gate is dropped — it pins upstream
+      # World Monitor marketing copy (README layer/proto/language counts,
+      # index.html hreflang/JSON-LD, public/llms*.txt) that the fork
+      # deliberately rewrote or removed during the K-Monitor debrand. The
+      # stats.json freshness gate above remains enforced.
 
   unit:
     needs: changes
