@@ -815,6 +815,13 @@ export class DeckGLMap {
 
   private highlightedAircraft: string | null = null;
 
+  // KCG fork(07-23 사장님 지시): adsb.lol 동등 실시간 추적 — 선택 항공기 상태.
+  private selectedAircraftIcao: string | null = null;
+  private selectedAircraftTrail: Array<{ lat: number; lon: number; altFt: number }> = [];
+  private selectedAircraftTimer: ReturnType<typeof setInterval> | null = null;
+  private kcgAircraftCard: HTMLDivElement | null = null;
+  private kcgAircraftCardFields: Map<string, HTMLElement> = new Map();
+
   /** AirlineIntelPanel 추적 리스트 → 지도 하이라이트 (window 이벤트 배선). */
   private kcgHighlightListener = (e: Event): void => {
     const d = (e as CustomEvent<{ icao24?: string; lat?: number; lon?: number }>).detail;
@@ -826,40 +833,267 @@ export class DeckGLMap {
     this.render();
   };
 
-  private openKcgFlightModal(d: PositionSample): void {
-    const cs = (d.callsign || '').trim() || d.icao24;
-    const esc = (v: unknown) => escapeHtml(String(v ?? ''));
-    const body = document.createElement('div');
-    const altFt = Math.round(d.altitudeFt ?? 0);
-    setTrustedHtml(body, trustedHtml(`
-      <div style="font-size:13px;line-height:1.9">
-        <div><span style="color:#789">편명/콜사인</span> &nbsp;<strong>${esc(cs)}</strong> <span style="color:#678;font-size:11px">(${esc(d.icao24)})</span></div>
-        <div id="kcg-flight-route" style="margin:6px 0;padding:8px 10px;background:rgba(0,209,255,0.06);border-radius:6px;color:#9fb4c4">노선 정보 조회 중…</div>
-        <div><span style="color:#789">고도</span> &nbsp;${altFt.toLocaleString()} ft &nbsp;·&nbsp; <span style="color:#789">속력</span> ${Math.round(d.groundSpeedKts ?? 0)} kts &nbsp;·&nbsp; <span style="color:#789">침로</span> ${Math.round(d.trackDeg ?? 0)}°</div>
-        <div><span style="color:#789">위치</span> &nbsp;${d.lat.toFixed(3)}, ${d.lon.toFixed(3)} ${d.onGround ? '&nbsp;·&nbsp; 지상' : ''}</div>
-      </div>
-    `, 'KCG flight modal — values escaped'));
-    showKcgModalNode(`항공편 ${cs}`, body, 460);
+  // ── KCG fork(07-23 사장님 지시): adsb.lol 동등 항공기 실시간 추적 ────────
+  // 클릭 = 선택. ① 최근 궤적(tar1090 trace_recent) 즉시 로드 ② 2초 주기
+  // 실시간 상세(고도·속도·수직속도·스쿼크·등록번호·기종) ③ 궤적 라이브 연장
+  // + 지도 아이콘 즉시 이동. 카드는 모달이 아닌 지도 좌상단 플로팅 —
+  // 추적 중에도 지도가 가려지지 않는다. 프록시: /api/kcg-aircraft-trace
+  // (adsb.lol 은 CORS 미지원이라 브라우저 직접 호출 불가).
 
-    const routeEl = body.querySelector('#kcg-flight-route');
-    const csClean = (d.callsign || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
-    if (!routeEl || !csClean) {
-      if (routeEl) routeEl.textContent = '콜사인이 없어 노선을 조회할 수 없어요';
-      return;
-    }
-    fetch(toApiUrl(`/api/kcg-flight-info?callsign=${csClean}`), { signal: AbortSignal.timeout(10_000) })
-      .then(r => r.ok ? r.json() : null)
-      .then((info: { found?: boolean; airline?: string; callsignIata?: string; origin?: { iata?: string; city?: string; name?: string; country?: string }; destination?: { iata?: string; city?: string; name?: string; country?: string } } | null) => {
-        if (!routeEl?.isConnected) return;
-        if (!info?.found) { routeEl.textContent = '노선 정보가 등록되지 않은 편이에요'; return; }
-        const ap = (a?: { iata?: string; city?: string; name?: string; country?: string }) =>
-          a ? `${esc(a.city || a.name)}(${esc(a.iata)})` : '?';
-        setTrustedHtml(routeEl as HTMLElement, trustedHtml(
-          `<div><strong>${esc(info.airline)}</strong>${info.callsignIata ? ` · ${esc(info.callsignIata)}` : ''}</div>
-           <div style="margin-top:2px;font-size:14px">${ap(info.origin)} <span style="color:#7fd4ff">→</span> ${ap(info.destination)}</div>`,
-          'KCG flight route — values escaped'));
+  private selectAircraft(d: PositionSample): void {
+    const icao = (d.icao24 || '').toLowerCase();
+    if (!/^[0-9a-f]{6}$/.test(icao)) return;
+    if (this.selectedAircraftIcao === icao) { this.deselectAircraft(); return; }
+    this.deselectAircraft();
+    this.selectedAircraftIcao = icao;
+    this.highlightedAircraft = d.icao24;
+    this.buildKcgAircraftCard(d);
+    fetch(toApiUrl(`/api/kcg-aircraft-trace?icao=${icao}`), { signal: AbortSignal.timeout(10_000) })
+      .then(r => (r.ok ? r.json() : null))
+      .then((data: { found?: boolean; points?: Array<{ lat: number; lon: number; altFt: number }> } | null) => {
+        if (this.selectedAircraftIcao !== icao) return;
+        if (data?.found && Array.isArray(data.points) && data.points.length > 0) {
+          this.selectedAircraftTrail = data.points.map(p => ({ lat: p.lat, lon: p.lon, altFt: p.altFt || 0 }));
+          this.render();
+        }
       })
-      .catch(() => { if (routeEl?.isConnected) routeEl.textContent = '노선 조회에 실패했어요'; });
+      .catch(() => { /* 궤적 없이도 추적은 계속 */ });
+    this.loadKcgFlightRoute(d);
+    this.pollSelectedAircraft(icao);
+    this.selectedAircraftTimer = setInterval(() => this.pollSelectedAircraft(icao), 2_000);
+    this.render();
+  }
+
+  private deselectAircraft(): void {
+    if (this.selectedAircraftTimer) {
+      clearInterval(this.selectedAircraftTimer);
+      this.selectedAircraftTimer = null;
+    }
+    if (!this.selectedAircraftIcao && !this.kcgAircraftCard) return;
+    this.selectedAircraftIcao = null;
+    this.highlightedAircraft = null;
+    this.selectedAircraftTrail = [];
+    this.kcgAircraftCard?.remove();
+    this.kcgAircraftCard = null;
+    this.kcgAircraftCardFields.clear();
+    this.render();
+  }
+
+  private pollSelectedAircraft(icao: string): void {
+    interface KcgAircraftLive {
+      found?: boolean; hex?: string; callsign?: string; registration?: string;
+      aircraftType?: string; squawk?: string; emergency?: string;
+      lat?: number; lon?: number; altBaroFt?: number | null; altGeomFt?: number | null;
+      onGround?: boolean; gsKt?: number | null; mach?: number | null;
+      track?: number | null; baroRateFpm?: number | null; seenPosSec?: number | null;
+      rssi?: number | null;
+    }
+    fetch(toApiUrl(`/api/kcg-aircraft-trace?icao=${icao}&live=1`), { signal: AbortSignal.timeout(8_000) })
+      .then(r => (r.ok ? r.json() : null))
+      .then((live: KcgAircraftLive | null) => {
+        if (this.selectedAircraftIcao !== icao) return;
+        const status = this.kcgAircraftCardFields.get('status');
+        if (!live || !live.found) {
+          if (status) { status.textContent = '신호 소실 — 수신 대기 중'; status.style.color = '#f0a020'; }
+          return;
+        }
+        this.updateKcgAircraftCard(live);
+        if (typeof live.lat === 'number' && typeof live.lon === 'number') {
+          const altFt = live.altBaroFt ?? live.altGeomFt ?? 0;
+          const last = this.selectedAircraftTrail[this.selectedAircraftTrail.length - 1];
+          if (!last || last.lat !== live.lat || last.lon !== live.lon) {
+            this.selectedAircraftTrail.push({ lat: live.lat, lon: live.lon, altFt });
+            if (this.selectedAircraftTrail.length > 2500) this.selectedAircraftTrail.shift();
+          }
+          const idx = this.aircraftPositions.findIndex(p => (p.icao24 || '').toLowerCase() === icao);
+          if (idx >= 0) {
+            const cur = this.aircraftPositions[idx]!;
+            this.aircraftPositions[idx] = {
+              ...cur,
+              lat: live.lat, lon: live.lon,
+              altitudeFt: typeof altFt === 'number' && altFt > 0 ? altFt : cur.altitudeFt,
+              groundSpeedKts: live.gsKt ?? cur.groundSpeedKts,
+              trackDeg: live.track ?? cur.trackDeg,
+              squawk: live.squawk || cur.squawk,
+            };
+            this.aircraftPositions = [...this.aircraftPositions];
+          }
+          this.render();
+        }
+      })
+      .catch(() => { /* 다음 폴에서 재시도 */ });
+  }
+
+  private kcgCardRow(label: string, fieldKey: string): HTMLElement {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;justify-content:space-between;gap:12px;line-height:1.7;';
+    const l = document.createElement('span');
+    l.textContent = label;
+    l.style.cssText = 'color:#7f95a8;flex-shrink:0;';
+    const v = document.createElement('span');
+    v.textContent = '—';
+    v.style.cssText = 'font-variant-numeric:tabular-nums;text-align:right;color:#dce8f2;';
+    row.append(l, v);
+    this.kcgAircraftCardFields.set(fieldKey, v);
+    return row;
+  }
+
+  private buildKcgAircraftCard(d: PositionSample): void {
+    this.kcgAircraftCard?.remove();
+    this.kcgAircraftCardFields.clear();
+
+    const card = document.createElement('div');
+    card.className = 'kcg-aircraft-tracker-card';
+    card.style.cssText = [
+      'position:absolute', 'top:10px', 'left:10px', 'z-index:40', 'width:250px',
+      'background:rgba(10,18,28,0.92)', 'border:1px solid rgba(0,209,255,0.25)',
+      'border-radius:8px', 'padding:10px 12px', 'font-size:12px', 'color:#dce8f2',
+      'backdrop-filter:blur(6px)', 'box-shadow:0 4px 16px rgba(0,0,0,0.4)',
+      'pointer-events:auto',
+    ].join(';');
+
+    const head = document.createElement('div');
+    head.style.cssText = 'display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:2px;';
+    const title = document.createElement('div');
+    const cs = document.createElement('strong');
+    cs.textContent = (d.callsign || '').trim() || d.icao24.toUpperCase();
+    cs.style.cssText = 'font-size:15px;color:#7fd4ff;';
+    this.kcgAircraftCardFields.set('title', cs);
+    const hex = document.createElement('span');
+    hex.textContent = ` ${d.icao24.toUpperCase()}`;
+    hex.style.cssText = 'color:#5a7085;font-size:10px;';
+    title.append(cs, hex);
+    const close = document.createElement('button');
+    close.textContent = '×';
+    close.setAttribute('aria-label', '추적 종료');
+    close.style.cssText = 'background:none;border:none;color:#8aa0b4;font-size:16px;cursor:pointer;padding:0 0 0 8px;line-height:1;';
+    close.addEventListener('click', () => this.deselectAircraft());
+    head.append(title, close);
+    card.append(head);
+
+    const sub = document.createElement('div');
+    sub.style.cssText = 'color:#8aa0b4;font-size:11px;margin-bottom:6px;';
+    sub.textContent = '기체 정보 수신 중…';
+    this.kcgAircraftCardFields.set('subtitle', sub);
+    card.append(sub);
+
+    const route = document.createElement('div');
+    route.style.cssText = 'margin:0 0 6px;padding:6px 8px;background:rgba(0,209,255,0.06);border-radius:6px;color:#9fb4c4;font-size:11px;';
+    route.textContent = '노선 정보 조회 중…';
+    this.kcgAircraftCardFields.set('route', route);
+    card.append(route);
+
+    card.append(
+      this.kcgCardRow('고도', 'alt'),
+      this.kcgCardRow('지상 속도', 'gs'),
+      this.kcgCardRow('수직 속도', 'vs'),
+      this.kcgCardRow('트랙', 'track'),
+      this.kcgCardRow('스쿼크', 'squawk'),
+      this.kcgCardRow('위치', 'pos'),
+      this.kcgCardRow('신호', 'signal'),
+    );
+
+    const status = document.createElement('div');
+    status.style.cssText = 'margin-top:6px;font-size:11px;color:#5fbf7f;';
+    status.textContent = '실시간 추적 중 (2초 주기)';
+    this.kcgAircraftCardFields.set('status', status);
+    card.append(status);
+
+    this.container.append(card);
+    this.kcgAircraftCard = card;
+  }
+
+  private updateKcgAircraftCard(live: {
+    callsign?: string; registration?: string; aircraftType?: string; squawk?: string;
+    emergency?: string; lat?: number; lon?: number; altBaroFt?: number | null;
+    onGround?: boolean; gsKt?: number | null; mach?: number | null; track?: number | null;
+    baroRateFpm?: number | null; seenPosSec?: number | null; rssi?: number | null;
+  }): void {
+    const f = (key: string) => this.kcgAircraftCardFields.get(key);
+    const set = (key: string, text: string) => { const el = f(key); if (el) el.textContent = text; };
+
+    if (live.callsign) set('title', live.callsign);
+    const subParts: string[] = [];
+    if (live.aircraftType) subParts.push(live.aircraftType);
+    if (live.registration) subParts.push(live.registration);
+    if (subParts.length > 0) set('subtitle', subParts.join(' · '));
+
+    if (live.onGround) set('alt', '지상');
+    else if (typeof live.altBaroFt === 'number') {
+      const arrow = (live.baroRateFpm ?? 0) > 100 ? ' ▲' : (live.baroRateFpm ?? 0) < -100 ? ' ▼' : '';
+      set('alt', `${Math.round(live.altBaroFt).toLocaleString()} ft${arrow}`);
+    }
+    if (typeof live.gsKt === 'number') {
+      set('gs', `${Math.round(live.gsKt)} kt${typeof live.mach === 'number' ? ` · M${live.mach.toFixed(2)}` : ''}`);
+    }
+    if (typeof live.baroRateFpm === 'number') {
+      const sign = live.baroRateFpm > 0 ? '+' : '';
+      set('vs', `${sign}${Math.round(live.baroRateFpm).toLocaleString()} ft/min`);
+    }
+    if (typeof live.track === 'number') set('track', `${Math.round(live.track)}°`);
+    if (live.squawk) {
+      set('squawk', live.squawk);
+      const el = f('squawk');
+      const isEmergency = ['7500', '7600', '7700'].includes(live.squawk) || (live.emergency && live.emergency !== 'none');
+      if (el) el.style.color = isEmergency ? '#ff5050' : '#dce8f2';
+      const status = f('status');
+      if (isEmergency && status) {
+        status.textContent = `⚠ 비상 스쿼크 ${live.squawk}`;
+        status.style.color = '#ff5050';
+      }
+    }
+    if (typeof live.lat === 'number' && typeof live.lon === 'number') {
+      set('pos', `${live.lat.toFixed(3)}, ${live.lon.toFixed(3)}`);
+    }
+    const sigParts: string[] = [];
+    if (typeof live.seenPosSec === 'number') sigParts.push(`${live.seenPosSec.toFixed(1)}초 전`);
+    if (typeof live.rssi === 'number') sigParts.push(`${live.rssi.toFixed(1)} dB`);
+    if (sigParts.length > 0) set('signal', sigParts.join(' · '));
+  }
+
+  private loadKcgFlightRoute(d: PositionSample): void {
+    const routeEl = this.kcgAircraftCardFields.get('route');
+    const csClean = (d.callsign || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (!routeEl) return;
+    if (!csClean) { routeEl.textContent = '콜사인이 없어 노선을 조회할 수 없어요'; return; }
+    fetch(toApiUrl(`/api/kcg-flight-info?callsign=${csClean}`), { signal: AbortSignal.timeout(10_000) })
+      .then(r => (r.ok ? r.json() : null))
+      .then((info: { found?: boolean; airline?: string; callsignIata?: string; origin?: { iata?: string; city?: string; name?: string }; destination?: { iata?: string; city?: string; name?: string } } | null) => {
+        if (!routeEl.isConnected) return;
+        if (!info?.found) { routeEl.textContent = '노선 정보가 등록되지 않은 편이에요'; return; }
+        const ap = (a?: { iata?: string; city?: string; name?: string }) => (a ? `${a.city || a.name || '?'}(${a.iata || '?'})` : '?');
+        routeEl.textContent = '';
+        const airline = document.createElement('strong');
+        airline.textContent = info.airline || '';
+        const path = document.createElement('div');
+        path.style.cssText = 'margin-top:1px;font-size:12px;color:#dce8f2;';
+        path.textContent = `${ap(info.origin)} → ${ap(info.destination)}`;
+        routeEl.append(airline, path);
+      })
+      .catch(() => { if (routeEl.isConnected) routeEl.textContent = '노선 조회에 실패했어요'; });
+  }
+
+  /** 선택 항공기 궤적 — 고도 그라디언트(연속 2점 세그먼트별 착색, adsb.lol 방식). */
+  private createSelectedAircraftTrailLayer(): PathLayer<{ path: [number, number][]; color: [number, number, number, number] }> {
+    const pts = this.selectedAircraftTrail;
+    const segments: Array<{ path: [number, number][]; color: [number, number, number, number] }> = [];
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1]!;
+      const b = pts[i]!;
+      const [r, g, bl] = altitudeToColor(b.altFt);
+      segments.push({ path: [[a.lon, a.lat], [b.lon, b.lat]], color: [r, g, bl, 230] });
+    }
+    return new PathLayer({
+      id: 'kcg-selected-aircraft-trail',
+      data: segments,
+      getPath: (s) => s.path,
+      getColor: (s) => s.color,
+      getWidth: 3,
+      widthUnits: 'pixels' as const,
+      capRounded: true,
+      jointRounded: true,
+      pickable: false,
+    });
   }
 
   private openKcgVesselModal(d: { mmsi: string; lat: number; lon: number; speed: number; shipType: number; name: string; heading: number; course: number; timestamp: number }): void {
@@ -2187,6 +2421,11 @@ export class DeckGLMap {
       if (closures.length > 0) {
         layers.push(this.createNotamOverlayLayer(closures));
       }
+    }
+
+    // KCG fork(07-23): 선택 항공기 궤적 — 아이콘 아래에 그린다
+    if (mapLayers.flights && this.selectedAircraftTrail.length > 1) {
+      layers.push(this.createSelectedAircraftTrailLayer());
     }
 
     // Aircraft positions layer (live tracking, under flights toggle)
@@ -5415,7 +5654,7 @@ export class DeckGLMap {
 
     // KCG fork: 항공기·선박 클릭 = 상세 모달(사장님 지시 07-21)
     if (layerId === 'aircraft-positions-layer' && info.object) {
-      this.openKcgFlightModal(info.object as PositionSample);
+      this.selectAircraft(info.object as PositionSample);
       return;
     }
     if (layerId === 'live-tankers-layer' && info.object) {
@@ -6889,7 +7128,7 @@ export class DeckGLMap {
         this.aircraftFetchTimer = setInterval(() => {
           this.lastAircraftFetchCenter = null; // force refresh on poll
           this.fetchViewportAircraft();
-        }, 120_000); // Match server cache TTL (120s anonymous OpenSky tier)
+        }, 10_000); // KCG fork(07-23): 120s→10s — 서버 Redis TTL(10s)와 동조, adsb.lol 급 실시간
         this.debouncedFetchAircraft();
       }
     } else {
@@ -6897,6 +7136,7 @@ export class DeckGLMap {
         clearInterval(this.aircraftFetchTimer);
         this.aircraftFetchTimer = null;
       }
+      this.deselectAircraft(); // KCG fork: 레이어 끄면 추적도 종료
       this.aircraftPositions = [];
     }
   }
@@ -8092,6 +8332,12 @@ export class DeckGLMap {
       clearInterval(this.aircraftFetchTimer);
       this.aircraftFetchTimer = null;
     }
+    if (this.selectedAircraftTimer) {
+      clearInterval(this.selectedAircraftTimer);
+      this.selectedAircraftTimer = null;
+    }
+    this.kcgAircraftCard?.remove();
+    this.kcgAircraftCard = null;
     this.stopLiveTankersLoop();
 
 
