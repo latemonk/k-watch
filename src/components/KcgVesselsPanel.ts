@@ -15,7 +15,7 @@ import { safeHtml, joinSafeHtml, type SafeHtml } from '@/utils/sanitize';
 import { fetchLiveTankers } from '@/services/live-tankers';
 import { KOREA_ZONES } from '@/config/korea-zones';
 import { flagFromMmsi, flagEmoji, shipTypeKo } from '@/utils/mmsi-flag';
-import { showKcgModal } from '@/utils/kcg-modal';
+import { showKcgModal, closeKcgModal } from '@/utils/kcg-modal';
 import { showToast } from '@/utils/toast';
 import { getRpcBaseUrl } from '@/services/rpc-client';
 import { MaritimeServiceClient } from '@/services/generated-rpc-clients';
@@ -698,9 +698,14 @@ export class KcgVesselsPanel extends Panel {
         const lat = Number((el as HTMLElement).dataset.focusLat);
         const lon = Number((el as HTMLElement).dataset.focusLon);
         if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+        const mmsi = (el as HTMLElement).closest('[data-row-mmsi]')?.getAttribute('data-row-mmsi') || '';
         try {
-          window.dispatchEvent(new CustomEvent('kcg:map-focus', { detail: { lat, lon, zoom: 9 } }));
-          showToast('지도를 해당 선박 위치로 옮겼어요');
+          // 사장님 지시 07-23: 선택 즉시 모달/확대뷰 닫고 해당 선박 하이라이트.
+          closeKcgModal();
+          if (this.element.classList.contains('panel-maximized')) this.toggleMaximize();
+          window.dispatchEvent(new CustomEvent('kcg:map-focus', { detail: { lat, lon, zoom: 10 } }));
+          if (mmsi) window.dispatchEvent(new CustomEvent('kcg:highlight-vessel', { detail: { mmsi, lat, lon } }));
+          showToast('지도에서 해당 선박을 표시했어요');
         } catch { /* SSR/테스트 */ }
       };
     });

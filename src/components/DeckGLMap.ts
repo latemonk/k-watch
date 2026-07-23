@@ -814,6 +814,21 @@ export class DeckGLMap {
   // ── KCG fork: 항공기/선박 클릭 상세 모달 + 추적 리스트 하이라이트 ──────
 
   private highlightedAircraft: string | null = null;
+  private highlightedVessel: string | null = null;
+  private highlightedVesselTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** 선박 목록/판정 상세 → 지도 선박 하이라이트(15초 후 자동 해제). */
+  private kcgHighlightVesselListener = (e: Event): void => {
+    const d = (e as CustomEvent<{ mmsi?: string; lat?: number; lon?: number }>).detail;
+    if (!d?.mmsi) return;
+    this.highlightedVessel = String(d.mmsi);
+    if (this.highlightedVesselTimer) clearTimeout(this.highlightedVesselTimer);
+    this.highlightedVesselTimer = setTimeout(() => { this.highlightedVessel = null; this.render(); }, 15_000);
+    if (typeof d.lat === 'number' && typeof d.lon === 'number') {
+      try { this.maplibreMap?.easeTo({ center: [d.lon, d.lat], zoom: Math.max(this.maplibreMap.getZoom(), 9), duration: 800 }); } catch { /* ignore */ }
+    }
+    this.render();
+  };
 
   // KCG fork(07-23 사장님 지시): adsb.lol 동등 실시간 추적 — 선택 항공기 상태.
   private selectedAircraftIcao: string | null = null;
@@ -1264,8 +1279,9 @@ export class DeckGLMap {
    *  destination before moveend fires, preventing stale intermediate coords
    *  from being written to the URL during flyTo. Cleared on moveend. */
   private pendingCenter: { lat: number; lon: number } | null = null;
-  private lastAircraftFetchCenter: [number, number] | null = null;
-  private lastAircraftFetchZoom = -1;
+  // KCG fork(07-23): 줌 재로딩 방지 — 마지막 페치가 커버한 bbox 를 기억하고
+  // 현재 뷰포트가 그 안(부분집합)이면 재페치하지 않는다.
+  private lastAircraftFetchBounds: { swLat: number; swLon: number; neLat: number; neLon: number } | null = null;
   private aircraftFetchSeq = 0;
 
   constructor(container: HTMLElement, initialState: DeckMapState, options: DeckGLMapOptions = {}) {
@@ -1583,6 +1599,7 @@ export class DeckGLMap {
     }
     window.addEventListener('kcg:highlight-aircraft', this.kcgHighlightListener);
     window.addEventListener('kcg:select-aircraft', this.kcgSelectAircraftListener);
+    window.addEventListener('kcg:highlight-vessel', this.kcgHighlightVesselListener);
 
     let tileLoadOk = false;
     let tileErrorCount = 0;
@@ -3530,7 +3547,8 @@ export class DeckGLMap {
       iconAtlas: MARKER_ICONS.plane,
       iconMapping: AIRCRAFT_ICON_MAPPING,
       // KCG fork(07-23 사장님 지시): adsb.lol 수준으로 확대 — 식별성 우선.
-      getSize: (d) => (this.highlightedAircraft && d.icao24 === this.highlightedAircraft) ? 40 : (d.onGround ? 18 : 28),
+      // KCG fork(07-23 사장님: 더 크게). 기본 28→36·지상 18→22·하이라이트 40→48.
+      getSize: (d) => (this.highlightedAircraft && d.icao24 === this.highlightedAircraft) ? 48 : (d.onGround ? 22 : 36),
       getColor: (d) => {
         // KCG fork: 추적 리스트에서 선택한 항공기 하이라이트
         if (this.highlightedAircraft && d.icao24 === this.highlightedAircraft) {
@@ -3541,8 +3559,8 @@ export class DeckGLMap {
         return [r, g, b, 220] as [number, number, number, number];
       },
       getAngle: (d) => -d.trackDeg,
-      sizeMinPixels: 14,
-      sizeMaxPixels: 44,
+      sizeMinPixels: 18,
+      sizeMaxPixels: 54,
       sizeScale: 1,
       pickable: true,
       billboard: false,
@@ -3950,16 +3968,19 @@ export class DeckGLMap {
           : (Number.isFinite(hdg) && hdg >= 0 && hdg < 360 ? hdg : 0);
         return -deg;
       },
-      getColor: (d) => shipTypeColor(d.shipType, flagFromMmsi(d.mmsi).iso),
+      getColor: (d) => {
+        if (this.highlightedVessel && d.mmsi === this.highlightedVessel) return [255, 60, 60, 255] as [number, number, number, number];
+        return shipTypeColor(d.shipType, flagFromMmsi(d.mmsi).iso);
+      },
       // KCG fork(07-23 사장님 지시): 식별 잘 되게 확대(항공기와 동일 정책).
-      getSize: 26,
+      getSize: (d) => (this.highlightedVessel && d.mmsi === this.highlightedVessel) ? 40 : 26,
       sizeMinPixels: 14,
-      sizeMaxPixels: 34,
+      sizeMaxPixels: 44,
       // globe(3D)에서는 지표면에 붙인 평면 아이콘이 구면과 z-파이팅으로
       // 사라진다(사장님 실측 07-21) — 3D 는 빌보드로 띄워 렌더한다.
       billboard: this.globeProjection,
       pickable: true,
-      updateTriggers: { billboard: this.globeProjection },
+      updateTriggers: { billboard: this.globeProjection, getColor: this.highlightedVessel, getSize: this.highlightedVessel },
     });
   }
 
@@ -7206,7 +7227,7 @@ export class DeckGLMap {
     if (enabled) {
       if (!this.aircraftFetchTimer) {
         this.aircraftFetchTimer = setInterval(() => {
-          this.lastAircraftFetchCenter = null; // force refresh on poll
+          this.lastAircraftFetchBounds = null; // force refresh on poll
           this.fetchViewportAircraft();
         }, 10_000); // KCG fork(07-23): 120s→10s — 서버 Redis TTL(10s)와 동조, adsb.lol 급 실시간
         this.debouncedFetchAircraft();
@@ -7223,14 +7244,18 @@ export class DeckGLMap {
 
   private hasAircraftViewportChanged(): boolean {
     if (!this.maplibreMap) return false;
-    if (!this.lastAircraftFetchCenter) return true;
-    const center = this.maplibreMap.getCenter();
-    const zoom = this.maplibreMap.getZoom();
-    if (Math.abs(zoom - this.lastAircraftFetchZoom) >= 1) return true;
-    const [prevLng, prevLat] = this.lastAircraftFetchCenter;
-    // Threshold scales with zoom — higher zoom = smaller movement triggers fetch
-    const threshold = Math.max(0.1, 2 / 2 ** Math.max(0, zoom - 3));
-    return Math.abs(center.lat - prevLat) > threshold || Math.abs(center.lng - prevLng) > threshold;
+    // KCG fork(07-23 사장님 지시): 줌 인/아웃마다 재로딩하지 말고, 마지막
+    // 페치가 커버한 bbox 밖으로 벗어날 때만 다시 받는다. 줌 IN 은 항상
+    // 이전 bbox 의 부분집합이라 재페치 없음(deck.gl 이 알아서 스케일).
+    // 줌 OUT/패닝으로 커버 밖이 드러날 때만 페치.
+    if (!this.lastAircraftFetchBounds) return true;
+    const b = this.maplibreMap.getBounds();
+    const sw = b.getSouthWest();
+    const ne = b.getNorthEast();
+    const f = this.lastAircraftFetchBounds;
+    // 현재 뷰포트가 마지막 페치 bbox 안에 완전히 들어오면(부분집합) 재페치 불필요.
+    const contained = sw.lat >= f.swLat && sw.lng >= f.swLon && ne.lat <= f.neLat && ne.lng <= f.neLon;
+    return !contained;
   }
 
   private fetchViewportAircraft(): void {
@@ -7257,11 +7282,7 @@ export class DeckGLMap {
       if (seq !== this.aircraftFetchSeq) return; // discard stale response
       this.aircraftPositions = positions;
       this.onAircraftPositionsUpdate?.(positions);
-      const center = this.maplibreMap?.getCenter();
-      if (center) {
-        this.lastAircraftFetchCenter = [center.lng, center.lat];
-        this.lastAircraftFetchZoom = this.maplibreMap!.getZoom();
-      }
+      this.lastAircraftFetchBounds = { swLat: sw.lat, swLon: sw.lng, neLat: ne.lat, neLon: ne.lng };
       this.setLayerReady('flights', positions.length > 0);
       this.render();
     }).catch((err) => {
@@ -8369,6 +8390,7 @@ export class DeckGLMap {
     this.destroyed = true;
     window.removeEventListener('kcg:highlight-aircraft', this.kcgHighlightListener);
     window.removeEventListener('kcg:select-aircraft', this.kcgSelectAircraftListener);
+    window.removeEventListener('kcg:highlight-vessel', this.kcgHighlightVesselListener);
     this.stopTradeAnimation();
     this.activeFlightTrails.clear();
     this.clearTrailsBtn = null;

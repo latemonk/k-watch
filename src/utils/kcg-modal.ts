@@ -82,6 +82,11 @@ export function showKcgModalNode(title: string, body: HTMLElement, maxWidth = 86
 // ESC keydown 리스너가 누적되는 것을 막는다 — 새 모달이 이전 모달을 닫는다.
 let activeModalClose: (() => void) | null = null;
 
+/** KCG fork(07-23): 목록에서 항목 선택 시 현재 모달을 닫기 위한 공용 훅. */
+export function closeKcgModal(): void {
+  if (activeModalClose) { activeModalClose(); activeModalClose = null; }
+}
+
 export function showKcgModal(title: string, body: SafeHtml): void {
   ensureStyle();
   if (activeModalClose) { activeModalClose(); activeModalClose = null; }

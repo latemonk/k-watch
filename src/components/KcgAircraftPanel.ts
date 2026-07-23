@@ -136,6 +136,10 @@ export class KcgAircraftPanel extends Panel {
         const icao = (el as HTMLElement).dataset.icao || '';
         if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
         try {
+          // 사장님 지시 07-23: 확대 보기(모달형)면 선택 즉시 닫아 지도가 보이게.
+          if (this.element.classList.contains('panel-maximized')) {
+            this.toggleMaximize(); // 확대(모달형) 상태면 닫아 지도가 보이게
+          }
           // 지도 이동 + 항공기 선택(궤적·상세 카드) — DeckGLMap 의 highlight
           // 리스너가 icao24 로 하이라이트하고 focus 리스너가 화면을 옮긴다.
           window.dispatchEvent(new CustomEvent('kcg:highlight-aircraft', { detail: { icao24: icao, lat, lon } }));
