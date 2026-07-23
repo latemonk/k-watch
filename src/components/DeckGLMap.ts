@@ -58,7 +58,6 @@ import { ArcLayer } from '@deck.gl/layers';
 import type { WeatherAlert } from '@/services/weather';
 import { escapeHtml } from '@/utils/sanitize';
 import { flagFromMmsi, flagEmoji, shipTypeKo, shipTypeColor } from '@/utils/mmsi-flag';
-import { showKcgModalNode } from '@/utils/kcg-modal';
 import { toApiUrl } from '@/services/runtime';
 import {
   derivePipelinePublicBadge,
@@ -815,15 +814,26 @@ export class DeckGLMap {
 
   private highlightedAircraft: string | null = null;
   private highlightedVessel: string | null = null;
+  private selectedVesselMmsi: string | null = null;
+  private kcgVesselCard: HTMLDivElement | null = null;
+  private kcgVesselCardReposition: (() => void) | null = null;
   private highlightedVesselTimer: ReturnType<typeof setTimeout> | null = null;
 
   /** 선박 목록/판정 상세 → 지도 선박 하이라이트(15초 후 자동 해제). */
   private kcgHighlightVesselListener = (e: Event): void => {
     const d = (e as CustomEvent<{ mmsi?: string; lat?: number; lon?: number }>).detail;
     if (!d?.mmsi) return;
-    this.highlightedVessel = String(d.mmsi);
+    const mmsi = String(d.mmsi);
+    // 목록/판정에서 선택 → 지도 클릭과 동일하게 우상단 플로팅 카드를 띄운다.
+    // 현재 스냅샷에 그 선박이 있으면 전체 필드로 카드를 채우고, 없으면
+    // 최소 정보(이벤트 좌표)로 하이라이트만 한다.
+    const hit = this.liveTankers.find((t) => t.mmsi === mmsi);
+    if (hit) {
+      this.selectVessel(hit);
+    } else {
+      this.highlightedVessel = mmsi;
+    }
     if (this.highlightedVesselTimer) clearTimeout(this.highlightedVesselTimer);
-    this.highlightedVesselTimer = setTimeout(() => { this.highlightedVessel = null; this.render(); }, 15_000);
     if (typeof d.lat === 'number' && typeof d.lon === 'number') {
       try { this.maplibreMap?.easeTo({ center: [d.lon, d.lat], zoom: Math.max(this.maplibreMap.getZoom(), 9), duration: 800 }); } catch { /* ignore */ }
     }
@@ -875,6 +885,7 @@ export class DeckGLMap {
     if (!/^[0-9a-f]{6}$/.test(icao)) return;
     if (this.selectedAircraftIcao === icao) { this.deselectAircraft(); return; }
     this.deselectAircraft();
+    this.deselectVessel();
     this.selectedAircraftIcao = icao;
     this.highlightedAircraft = d.icao24;
     this.buildKcgAircraftCard(d);
@@ -942,6 +953,8 @@ export class DeckGLMap {
               onGround: vp.onGround,
               gsKt: typeof vp.groundSpeedKts === 'number' ? vp.groundSpeedKts : null,
               track: typeof vp.trackDeg === 'number' ? vp.trackDeg : null,
+              // 뷰포트 스냅샷도 수직속도(m/s)를 실어오니 fpm 으로 채운다.
+              baroRateFpm: typeof vp.verticalRateMps === 'number' && vp.verticalRateMps !== 0 ? Math.round(vp.verticalRateMps * 196.85) : null,
             });
             if (status) { status.textContent = '실시간 추적 중 (2초 주기)'; status.style.color = '#5fbf7f'; }
           } else if (status) {
@@ -1182,7 +1195,46 @@ export class DeckGLMap {
     });
   }
 
-  private openKcgVesselModal(d: { mmsi: string; lat: number; lon: number; speed: number; shipType: number; name: string; heading: number; course: number; timestamp: number }): void {
+  // KCG fork(07-23 사장님 지시): 선박도 항공기처럼 지도 우상단 플로팅 카드로.
+  // 모달(가운데 오버레이) 대신 지도를 가리지 않는 body-포털 fixed 카드.
+  // 카드가 열려 있는 동안 해당 선박을 하이라이트하고, 60초 liveTankers
+  // 갱신마다 값을 새로고침한다. × 또는 같은 선박 재클릭으로 닫힘.
+  private selectVessel(d: { mmsi: string; lat: number; lon: number; speed: number; shipType: number; name: string; heading: number; course: number; timestamp: number }): void {
+    const mmsi = String(d.mmsi || '');
+    if (!mmsi) return;
+    if (this.selectedVesselMmsi === mmsi) { this.deselectVessel(); return; }
+    // 항공기 카드와 우상단이 겹치지 않게 서로 배타.
+    this.deselectAircraft();
+    this.deselectVessel();
+    this.selectedVesselMmsi = mmsi;
+    this.highlightedVessel = mmsi;
+    if (this.highlightedVesselTimer) { clearTimeout(this.highlightedVesselTimer); this.highlightedVesselTimer = null; }
+    this.buildKcgVesselCard(d);
+    this.render();
+  }
+
+  private deselectVessel(): void {
+    if (!this.selectedVesselMmsi && !this.kcgVesselCard) return;
+    this.selectedVesselMmsi = null;
+    this.highlightedVessel = null;
+    this.kcgVesselCard?.remove();
+    this.kcgVesselCard = null;
+    if (this.kcgVesselCardReposition) {
+      window.removeEventListener('resize', this.kcgVesselCardReposition);
+      this.kcgVesselCardReposition = null;
+    }
+    this.render();
+  }
+
+  private positionKcgVesselCard(): void {
+    if (!this.kcgVesselCard) return;
+    const r = this.container.getBoundingClientRect();
+    this.kcgVesselCard.style.top = `${Math.round(r.top + 12)}px`;
+    this.kcgVesselCard.style.left = `${Math.round(r.right - 258 - 12)}px`;
+  }
+
+  private buildKcgVesselCard(d: { mmsi: string; lat: number; lon: number; speed: number; shipType: number; name: string; heading: number; course: number; timestamp: number }): void {
+    this.kcgVesselCard?.remove();
     const esc = (v: unknown) => escapeHtml(String(v ?? ''));
     const flag = flagFromMmsi(d.mmsi);
     const kn = Number.isFinite(Number(d.speed)) ? `${Number(d.speed).toFixed(1)} kn` : '—';
@@ -1190,17 +1242,35 @@ export class DeckGLMap {
     const seen = Number.isFinite(Number(d.timestamp))
       ? new Date(Number(d.timestamp)).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
       : '—';
-    const body = document.createElement('div');
-    setTrustedHtml(body, trustedHtml(`
-      <div style="font-size:13px;line-height:1.9">
-        <div><span style="color:#789">선명</span> &nbsp;<strong>${esc(d.name || '(선명 미상)')}</strong></div>
-        <div><span style="color:#789">국적</span> &nbsp;${flagEmoji(flag.iso)} ${esc(flag.nameKo || '미상')} &nbsp;·&nbsp; <span style="color:#789">MMSI</span> ${esc(d.mmsi)}</div>
-        <div><span style="color:#789">선종</span> &nbsp;${esc(shipTypeKo(d.shipType))}</div>
-        <div><span style="color:#789">속력</span> &nbsp;${kn} &nbsp;·&nbsp; <span style="color:#789">침로</span> ${cog}</div>
-        <div><span style="color:#789">위치</span> &nbsp;${d.lat.toFixed(4)}, ${d.lon.toFixed(4)} &nbsp;·&nbsp; <span style="color:#789">마지막 수신</span> ${seen}</div>
+    const card = document.createElement('div');
+    card.className = 'kcg-vessel-tracker-card';
+    card.style.cssText = [
+      'position:fixed', 'z-index:2000', 'width:258px', 'max-height:60vh', 'overflow-y:auto',
+      'background:rgba(10,18,28,0.94)', 'border:1px solid rgba(0,209,255,0.3)',
+      'border-radius:8px', 'padding:10px 12px', 'font-size:12px', 'color:#dce8f2',
+      'backdrop-filter:blur(6px)', 'box-shadow:0 4px 20px rgba(0,0,0,0.5)', 'pointer-events:auto',
+    ].join(';');
+    setTrustedHtml(card, trustedHtml(`
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:2px">
+        <strong style="font-size:15px;color:#7fd4ff">${esc(d.name || '(선명 미상)')}</strong>
+        <button class="kcg-vessel-card-close" aria-label="닫기" style="background:none;border:none;color:#8aa0b4;font-size:16px;cursor:pointer;padding:0 0 0 8px;line-height:1">×</button>
       </div>
-    `, 'KCG vessel modal — values escaped'));
-    showKcgModalNode(`선박 ${d.name || d.mmsi}`, body, 440);
+      <div style="color:#8aa0b4;font-size:11px;margin-bottom:6px">${flagEmoji(flag.iso)} ${esc(flag.nameKo || '미상')} · MMSI ${esc(d.mmsi)}</div>
+      <div style="display:flex;justify-content:space-between;line-height:1.8"><span style="color:#7f95a8">선종</span><span>${esc(shipTypeKo(d.shipType))}</span></div>
+      <div style="display:flex;justify-content:space-between;line-height:1.8"><span style="color:#7f95a8">속력</span><span>${kn}</span></div>
+      <div style="display:flex;justify-content:space-between;line-height:1.8"><span style="color:#7f95a8">침로</span><span>${cog}</span></div>
+      <div style="display:flex;justify-content:space-between;line-height:1.8"><span style="color:#7f95a8">위치</span><span>${d.lat.toFixed(4)}, ${d.lon.toFixed(4)}</span></div>
+      <div style="display:flex;justify-content:space-between;line-height:1.8"><span style="color:#7f95a8">마지막 수신</span><span>${seen}</span></div>
+      <div style="margin-top:6px;font-size:11px;color:#5fbf7f">지도에서 하이라이트 중</div>
+    `, 'KCG vessel card — values escaped'));
+    (card.querySelector('.kcg-vessel-card-close') as HTMLElement | null)?.addEventListener('click', () => this.deselectVessel());
+    document.body.append(card);
+    this.kcgVesselCard = card;
+    this.positionKcgVesselCard();
+    if (!this.kcgVesselCardReposition) {
+      this.kcgVesselCardReposition = () => this.positionKcgVesselCard();
+      window.addEventListener('resize', this.kcgVesselCardReposition);
+    }
   }
 
   public setGlobeProjection(enabled: boolean): void {
@@ -5759,7 +5829,7 @@ export class DeckGLMap {
       return;
     }
     if (layerId === 'live-tankers-layer' && info.object) {
-      this.openKcgVesselModal(info.object as { mmsi: string; lat: number; lon: number; speed: number; shipType: number; name: string; heading: number; course: number; timestamp: number });
+      this.selectVessel(info.object as { mmsi: string; lat: number; lon: number; speed: number; shipType: number; name: string; heading: number; course: number; timestamp: number });
       return;
     }
 
@@ -7273,16 +7343,23 @@ export class DeckGLMap {
     const bounds = this.maplibreMap.getBounds();
     const sw = bounds.getSouthWest();
     const ne = bounds.getNorthEast();
+    // KCG fork(07-23 사장님: 왔다갔다 하면 또 로딩): 뷰포트보다 넓게(각 변
+    // 스팬의 60% 패딩) 받아, 소폭 패닝/줌은 이미 받아둔 영역 안이라 재페치가
+    // 안 걸리게 한다. adsb.lol point/radius 는 250nm 캡이라 한국권 패딩은 무해.
+    const latPad = Math.max(0.5, Math.abs(ne.lat - sw.lat) * 0.6);
+    const lonPad = Math.max(0.5, Math.abs(ne.lng - sw.lng) * 0.6);
+    const fSwLat = sw.lat - latPad, fSwLon = sw.lng - lonPad;
+    const fNeLat = ne.lat + latPad, fNeLon = ne.lng + lonPad;
     const seq = ++this.aircraftFetchSeq;
     this.setLayerLoading('flights', true);
     fetchAircraftPositions({
-      swLat: sw.lat, swLon: sw.lng,
-      neLat: ne.lat, neLon: ne.lng,
+      swLat: fSwLat, swLon: fSwLon,
+      neLat: fNeLat, neLon: fNeLon,
     }).then((positions) => {
       if (seq !== this.aircraftFetchSeq) return; // discard stale response
       this.aircraftPositions = positions;
       this.onAircraftPositionsUpdate?.(positions);
-      this.lastAircraftFetchBounds = { swLat: sw.lat, swLon: sw.lng, neLat: ne.lat, neLon: ne.lng };
+      this.lastAircraftFetchBounds = { swLat: fSwLat, swLon: fSwLon, neLat: fNeLat, neLon: fNeLon };
       this.setLayerReady('flights', positions.length > 0);
       this.render();
     }).catch((err) => {
@@ -8441,6 +8518,9 @@ export class DeckGLMap {
     }
     this.kcgAircraftCard?.remove();
     this.kcgAircraftCard = null;
+    this.kcgVesselCard?.remove();
+    this.kcgVesselCard = null;
+    if (this.kcgVesselCardReposition) { window.removeEventListener('resize', this.kcgVesselCardReposition); this.kcgVesselCardReposition = null; }
     this.stopLiveTankersLoop();
 
 

@@ -9,7 +9,7 @@ var config = { runtime: "edge" };
 
 var cache = /* @__PURE__ */ new Map();
 var TRACE_TTL_MS = 10e3;
-var LIVE_TTL_MS = 2e3;
+var LIVE_TTL_MS = 12e3;
 var CACHE_MAX = 500;
 
 function json(status, body, maxAge) {
@@ -26,6 +26,15 @@ function cacheGet(key, ttl) {
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < ttl) return hit.data;
   return null;
+}
+
+// KCG fork(07-23): 상류 adsb.lol 단건 조회가 자주 느리거나 502 라서, 성공
+// 캐시를 만료 후에도 보관했다가 상류 실패 시 stale 로 돌려준다. 한 번이라도
+// found 를 받으면 기종·등록번호가 카드에 계속 남는다(신선한 수치는 클라가
+// 뷰포트 스냅샷에서 별도로 갱신).
+function cacheGetStale(key) {
+  const hit = cache.get(key);
+  return hit ? hit.data : null;
 }
 
 function cacheSet(key, data) {
@@ -132,6 +141,9 @@ async function handler(req) {
     cacheSet(key, data);
     return json(200, data);
   } catch {
+    // stale-on-error: 마지막으로 성공한 값이 있으면 그걸 준다(카드가 안 비게).
+    const stale = cacheGetStale(key);
+    if (stale) return json(200, stale);
     return json(502, { error: live ? "실시간 조회에 실패했어요" : "궤적 조회에 실패했어요" });
   }
 }
