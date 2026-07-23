@@ -53,11 +53,9 @@ export class MobilePanelNav {
     this.proPanelKeys = new Set(getProPanelKeys(settings, SITE_VARIANT));
     const categories = [
       { key: 'all', label: t('header.sourceRegionAll') },
-      // PRO right after All: one tap surfaces the whole premium suite —
-      // each panel renders its own unlock CTA (the mobile conversion path).
-      ...(this.proPanelKeys.size > 0
-        ? [{ key: PRO_CATEGORY, label: `⚡ ${t('widgets.proBadge')}` }]
-        : []),
+      // KCG fork(07-23): 「⚡ PRO」 카테고리 칩 제거 — 유료 상품이 없어
+      // 프리미엄 스위트/전환 경로가 존재하지 않는다. proPanelKeys 필터
+      // 자체는 남겨두되 칩이 없으니 진입 불가.
       ...getVariantPanelCategories(settings, SITE_VARIANT)
         .map(({ key, labelKey }) => ({ key, label: t(labelKey) })),
     ];

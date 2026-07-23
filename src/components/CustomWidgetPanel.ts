@@ -37,14 +37,7 @@ export class CustomWidgetPanel extends Panel {
       }));
     });
 
-    if (this.spec.tier === 'pro') {
-      const badge = h('span', { className: 'widget-pro-badge' }, t('widgets.proBadge'));
-      if (closeBtn) {
-        this.header.insertBefore(badge, closeBtn);
-      } else {
-        this.header.appendChild(badge);
-      }
-    }
+    // KCG fork(07-23): 복원된 커스텀 위젯 헤더의 PRO 배지 제거 — 유료 상품 없음.
 
     if (closeBtn) {
       this.header.insertBefore(chatBtn, closeBtn);

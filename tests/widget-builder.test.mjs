@@ -548,13 +548,15 @@ describe('panel guardrails — cw- prefix handling', () => {
       /failed to save widget[\s\S]{0,220}showToast\(t\('widgets\.saveFailed'\)\)/,
       'Modifying a widget must surface a rejected save to the user',
     );
+    // KCG fork(07-23): 위젯 생성 진입점(PRO CTA + 애널리스트 칩)은 전부
+    // 제거됐다 — 남은 생성 실패 핸들러가 0개인지 고정한다.
     const createFailureHandlers = layout.match(
       /failed to add widget[\s\S]{0,220}showToast\(t\('widgets\.saveFailed'\)\)/g,
     ) ?? [];
     assert.equal(
       createFailureHandlers.length,
-      2,
-      'Both widget create entry points must surface a rejected save to the user',
+      0,
+      'KCG fork removed every widget-create entry point — none may remain in panel-layout',
     );
   });
 
@@ -576,11 +578,12 @@ describe('panel guardrails — cw- prefix handling', () => {
     );
   });
 
-  it('panel-layout AI button is gated by hasPremiumAccess', () => {
-    const hasCheck = layout.includes('hasPremiumAccess') || layout.includes('isProUser');
-    const buttonIdx = layout.indexOf('ai-widget-block');
-    assert.ok(hasCheck, 'hasPremiumAccess (or isProUser) not found in panel-layout');
-    assert.ok(buttonIdx !== -1, 'AI widget button not found in panel-layout');
+  it('panel-layout ships no AI-widget create button (KCG fork: paid CTA removed)', () => {
+    assert.equal(
+      layout.indexOf('ai-widget-block'),
+      -1,
+      'KCG fork removed the paid widget-builder CTA — .ai-widget-block must not come back',
+    );
   });
 
   it('panel-layout DEV warning excludes cw- panels', () => {
@@ -952,10 +955,10 @@ describe('CustomWidgetPanel — header buttons and events', () => {
     );
   });
 
-  it('PRO badge rendered in header when tier is pro', () => {
+  it('PRO badge is not rendered in header (KCG fork: no paid product)', () => {
     assert.ok(
-      panel.includes('widget-pro-badge'),
-      'CustomWidgetPanel must render .widget-pro-badge for PRO widgets',
+      !panel.includes("h('span', { className: 'widget-pro-badge' }"),
+      'KCG fork removed the PRO pill from CustomWidgetPanel headers',
     );
   });
 });
@@ -1566,25 +1569,19 @@ describe('PRO widget — modal and layout integration', () => {
     );
   });
 
-  it('layout has PRO create button when hasPremiumAccess', () => {
-    assert.ok(
-      layout.includes('hasPremiumAccess') || layout.includes('isProUser'),
-      'panel-layout must import/call hasPremiumAccess (or isProUser)',
-    );
-    assert.ok(
-      layout.includes('ai-widget-block-pro'),
-      'panel-layout must render PRO create button (.ai-widget-block-pro)',
+  it('layout has no PRO create button (KCG fork: paid CTA removed)', () => {
+    assert.equal(
+      layout.indexOf('ai-widget-block-pro'),
+      -1,
+      'KCG fork removed the PRO create CTA — .ai-widget-block-pro must not come back',
     );
   });
 
-  it('layout PRO button opens modal with tier: pro', () => {
-    const proButtonIdx = layout.indexOf('ai-widget-block-pro');
-    assert.ok(proButtonIdx !== -1);
-    // Use 1200 chars to cover the full button element including the click handler
-    const proButtonRegion = layout.slice(proButtonIdx, proButtonIdx + 1200);
-    assert.ok(
-      proButtonRegion.includes("tier: 'pro'") || proButtonRegion.includes("tier:'pro'") || proButtonRegion.includes('"pro"'),
-      "PRO button must open modal with tier: 'pro'",
+  it('layout has no MCP connect CTA (KCG fork: paid CTA removed)', () => {
+    assert.equal(
+      layout.indexOf('mcp-panel-block'),
+      -1,
+      'KCG fork removed the MCP connect CTA — .mcp-panel-block must not come back',
     );
   });
 });
@@ -1889,34 +1886,12 @@ describe('panel-layout — Pro add-block gating reacts to entitlement updates', 
     );
   });
 
-  it('proBlock + mcpBlock gating subscribes to BOTH auth and entitlement changes', () => {
-    // Anchor on the gating function to scope the search to its surroundings.
-    const gateFnIdx = layout.indexOf('applyProBlockGating');
-    assert.ok(gateFnIdx !== -1, 'applyProBlockGating not found in panel-layout');
-    const region = layout.slice(gateFnIdx, gateFnIdx + 1500);
-    assert.ok(
-      region.includes('subscribeAuthState'),
-      'Pro CTA gating must subscribe to subscribeAuthState (legacy auth-driven path)',
-    );
-    assert.ok(
-      region.includes('onEntitlementChange'),
-      'Pro CTA gating MUST subscribe to onEntitlementChange so paying Dodo users flip from hidden->visible when the Convex entitlement snapshot lands',
-    );
-  });
-
-  it('teardown clears the entitlement subscription so a destroyed layout does not leak callbacks', () => {
-    assert.ok(
-      layout.includes('proBlockEntitlementUnsubscribe'),
-      'panel-layout must hold a proBlockEntitlementUnsubscribe handle and clear it in destroy()',
-    );
-    // Look for the destroy() block
-    const destroyIdx = layout.indexOf('destroy(): void {');
-    assert.ok(destroyIdx !== -1, 'destroy() not found');
-    const destroyRegion = layout.slice(destroyIdx, destroyIdx + 2000);
-    assert.ok(
-      destroyRegion.includes('proBlockEntitlementUnsubscribe'),
-      'destroy() must invoke proBlockEntitlementUnsubscribe to avoid leaking callbacks across layout init/destroy cycles',
-    );
+  it('pro CTA gating machinery is fully removed (KCG fork)', () => {
+    // 업스트림의 proBlock/mcpBlock 표시 게이트와 그 구독 핸들이 남아 있으면
+    // 유료 CTA가 부활했다는 신호다.
+    assert.equal(layout.indexOf('applyProBlockGating'), -1, 'applyProBlockGating must stay removed');
+    assert.equal(layout.indexOf('proBlockUnsubscribe'), -1, 'proBlockUnsubscribe handle must stay removed');
+    assert.equal(layout.indexOf('proBlockEntitlementUnsubscribe'), -1, 'proBlockEntitlementUnsubscribe handle must stay removed');
   });
 });
 

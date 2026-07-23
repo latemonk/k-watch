@@ -5,7 +5,6 @@ import { h, replaceChildren, safeHtml as sanitizeHtmlFragment, setTrustedHtml, t
 import { safeHtmlToString, type SafeHtml } from '@/utils/sanitize';
 import { trackPanelResized } from '@/services/analytics';
 import { getAiFlowSettings } from '@/services/ai-flow-settings';
-import { getSecretState } from '@/services/runtime-config';
 import { PanelGateReason } from '@/services/panel-gating';
 import { dataFreshness, type PanelFreshnessSummary } from '@/services/data-freshness';
 import { formatPanelFreshnessDisplay } from '@/services/panel-freshness-display';
@@ -255,10 +254,8 @@ export class Panel {
       headerLeft.appendChild(this.newBadgeEl);
     }
 
-    if (options.premium && !getSecretState('WORLDMONITOR_API_KEY').present) {
-      const proBadge = h('span', { className: 'panel-pro-badge' }, t('premium.pro'));
-      headerLeft.appendChild(proBadge);
-    }
+    // KCG fork(07-23): 패널 헤더 PRO 배지 제거 — 유료 상품이 없는 포크에서
+    // premium 플래그는 업스트림 머지 패리티용 메타데이터로만 남는다.
 
     this.header.appendChild(headerLeft);
 

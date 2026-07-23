@@ -390,20 +390,9 @@ export class ChatAnalystPanel extends Panel {
       this.renderDashboardControlAction(bubble, parsedAction);
       return;
     }
+    // KCG fork(07-23): 「차트 위젯 생성」 액션 칩 제거 — 위젯 빌더(업스트림
+    // 유료 기능) 진입점을 없앤다. suggest-widget 액션은 조용히 무시.
     if (parsedAction.type !== 'suggest-widget') return;
-
-    const chip = document.createElement('button');
-    chip.className = 'chat-action-chip';
-    chip.textContent = `${parsedAction.label} →`;
-    chip.addEventListener('click', () => {
-      this.element.dispatchEvent(new CustomEvent('wm:open-widget-creator', {
-        bubbles: true,
-        detail: { initialMessage: parsedAction.prefill },
-      }));
-    });
-    const body = bubble.querySelector('.chat-msg-body');
-    if (body) bubble.insertBefore(chip, body);
-    else bubble.appendChild(chip);
   }
 
   private renderDashboardControlAction(bubble: HTMLElement, action: DashboardControlAction): void {
