@@ -66,7 +66,10 @@ const MIN_VALID_COUNTRIES = 5;
 // partial recovery as non-green; this lower publish floor keeps cap-mode
 // recovery from freezing seed-meta fetchedAt or hiding incremental canonical
 // coverage improvements while still blocking tiny 5-country publishes.
-const MIN_CANONICAL_PUBLISH = 50;
+// KCG fork(07-23): 50 → 30. 업스트림은 영속 Redis 전제의 회복 가드지만,
+// 휘발성 팟에선 부팅 직후 "일부라도 발행"이 "전부 미발행"보다 낫다
+// (KR/JP 등 우선 국가는 cold-fetch 큐 선두 고정이라 항상 포함).
+const MIN_CANONICAL_PUBLISH = 30;
 
 const EP3_BASE =
   'https://services9.arcgis.com/weJ1QsnbMYJlCHdG/arcgis/rest/services/Daily_Ports_Data/FeatureServer/0/query';
@@ -217,7 +220,11 @@ const MAX_CACHE_AGE_MS = 7 * 86_400_000;
 //
 // 30 is sized so the cold-fetch path (30 × ~3-5s/country with concurrency
 // 12 ≈ 12-15s) easily fits the 570s budget even when ArcGIS is slow.
-const MAX_COLD_FETCH_PER_RUN = 30;
+// KCG fork(07-23): 30 → 60. 팟 Redis 는 휘발성(--save '')이라 부팅마다
+// 제로에서 시작 — 30이면 아래 MIN_CANONICAL_PUBLISH(포크 30)와 맞물려
+// 첫날 canonical 이 못 나가 항만 카드가 하루 죽는다. 60이면 한 사이클에
+// 발행선을 확실히 넘고, ArcGIS 부하도 (~3-5s/국 순차) 감내 범위.
+const MAX_COLD_FETCH_PER_RUN = 60;
 // Concurrency for the cheap per-country maxDate preflight. These are tiny
 // outStatistics queries (returns 1 row), so we can push harder than the
 // expensive fetch concurrency without tripping ArcGIS 429s in practice.

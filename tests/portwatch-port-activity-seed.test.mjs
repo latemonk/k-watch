@@ -187,7 +187,8 @@ describe('seed-portwatch-port-activity.mjs exports', () => {
     // they advance — protects consumers from a 5-country canonical
     // published as fresh during a recovery from full outage.
     assert.match(src, /export const PORTWATCH_PORT_ACTIVITY_TARGET_COUNTRIES\s*=\s*174/);
-    assert.match(src, /const MIN_CANONICAL_PUBLISH\s*=\s*50/);
+    // KCG fork(07-23): 휘발성 Redis 부팅 발행을 위해 50→30 (시더 주석 참고).
+    assert.match(src, /const MIN_CANONICAL_PUBLISH\s*=\s*30/);
     // The gate is evaluated and used to conditionally write canonical/meta:
     assert.match(src, /const canonicalAdvances = shouldAdvanceCanonical\(countryData\.size\)/);
     assert.match(src, /if\s*\(canonicalAdvances\)\s*\{[\s\S]{0,300}SET',\s*CANONICAL_KEY/);
@@ -926,7 +927,9 @@ describe('validateFn', () => {
 
   it('keeps the 174-country target as a health floor, not the publish cursor', () => {
     assert.equal(PORTWATCH_PORT_ACTIVITY_TARGET_COUNTRIES, 174);
-    assert.equal(shouldAdvanceCanonical(49), false);
+    // KCG fork(07-23): 발행선 30 — 부팅 첫 사이클(cold cap 60)에 발행 보장.
+    assert.equal(shouldAdvanceCanonical(29), false);
+    assert.equal(shouldAdvanceCanonical(30), true);
     assert.equal(shouldAdvanceCanonical(50), true);
     assert.equal(shouldAdvanceCanonical(139), true);
     assert.equal(shouldAdvanceCanonical(173), true);
@@ -1089,11 +1092,9 @@ describe('resolveArcgisDateField (runtime, schema-flap defence)', () => {
 // ~ceil(N / cap) runs.
 describe('cold-fetch cap prevents 174-country cliff (WM 2026-05-13)', () => {
   it('MAX_COLD_FETCH_PER_RUN constant is declared with a sane value', () => {
-    // The cap value must allow the cold-fetch loop to fit comfortably inside
-    // the 570s bundle budget at the observed ~3-5s/country with concurrency
-    // 12. 30 × 5s / 12 ≈ 13s — well under budget, with plenty of room for
-    // preflight + write phases.
-    assert.match(src, /const MAX_COLD_FETCH_PER_RUN\s*=\s*30/);
+    // KCG fork(07-23): 30 → 60. 휘발성 Redis 부팅 첫 사이클에 발행선(30)을
+    // 확실히 넘기 위함 — 60 × 5s / 12 ≈ 25s, 인팟 실행이라 번들 예산 무관.
+    assert.match(src, /const MAX_COLD_FETCH_PER_RUN\s*=\s*60/);
   });
 
   it('cap triggers when needsFetch exceeds the cap (not a no-op)', () => {

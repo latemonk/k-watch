@@ -361,7 +361,11 @@ export async function main() {
         failedCount++;
       }
 
-      if (commands.length >= 50) {
+      // KCG fork(07-23): 50 → 10. 50개국 배치 플러시는 첫 저장까지 ~10분 —
+      // 그 사이 프로세스가 죽으면 전부 유실되고, 진행 관측도 불가(부트
+      // 사이클에서 "행"으로 오진해 두 번 죽인 실사고). 10이면 우선 국가
+      // (KR #8)가 첫 플러시에 포함된다.
+      if (commands.length >= 10) {
         await redisPipeline(commands.splice(0));
       }
     }
