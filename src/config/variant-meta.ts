@@ -13,12 +13,12 @@ export interface VariantMeta {
 
 export const VARIANT_META: { full: VariantMeta; [k: string]: VariantMeta } = {
   full: {
-    title: '대한민국 AI 통합 관제',
+    title: 'K-Watch — 대한민국 AI 통합 관제',
     description: '대한민국 권역의 선박·해양·안보·재난 정보를 실시간 감시하고 AI가 이상 활동을 판정하는 통합 관제 시스템',
     keywords: 'maritime domain awareness, AIS, Korea Coast Guard, vessel tracking, 해양경찰, 선박 감시, 해상 상황판',
-    url: 'https://www.worldmonitor.app/dashboard',
-    siteName: '대한민국 AI 통합 관제',
-    shortName: 'AI 통합 관제',
+    url: 'https://k-watch.onpod.ai/',
+    siteName: 'K-Watch',
+    shortName: 'K-Watch',
     subject: 'AI-Powered Global Intelligence and Situation Awareness',
     classification: 'AI Intelligence Dashboard, OSINT Tool, News Aggregator',
     categories: ['news', 'productivity'],
