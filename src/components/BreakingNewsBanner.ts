@@ -119,7 +119,7 @@ export class BreakingNewsBanner {
       this.updateOffset();
       return;
     }
-    let top = 41; // 헤더(40px)+보더(1px)에 밀착 — main.css .breaking-news-container와 동일 값
+    let top = 40; // 헤더 실측 높이(보더 포함 40px)에 밀착 — main.css .breaking-news-container와 동일 값
     if (document.body?.classList.contains('has-critical-banner')) {
       this.attachResizeObserverIfNeeded();
       const postureBanner = document.querySelector('.critical-posture-banner');
