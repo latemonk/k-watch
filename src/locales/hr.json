@@ -1347,7 +1347,8 @@
         "ciiNormal": "Normalno (31–50)",
         "ciiElevated": "Pojačano (51–65)",
         "ciiHigh": "Visoko (66–80)",
-        "ciiCritical": "Kritično (81–100)"
+        "ciiCritical": "Kritično (81–100)",
+        "helicopter": "Helicopter"
       },
       "layerGuide": "Vodič slojeva",
       "layerWarningTitle": "Obavijest o performansama",

@@ -56,13 +56,27 @@ interface AdsbAircraft {
     hex?: string; flight?: string; lat?: number; lon?: number;
     alt_baro?: number | string; alt_geom?: number; gs?: number; track?: number;
     baro_rate?: number; seen?: number; squawk?: string;
+    t?: string; r?: string; category?: string;
 }
 
-function parseAdsbAircraft(list: AdsbAircraft[]): PositionSample[] {
+// KCG fork(07-25 사장님 지시): 헬기/고정익 구분용 기체 메타.
+// 프로토 계약(PositionSample)에는 없는 포크 전용 확장 필드다. sebuf 게이트웨이는
+// 응답을 JSON.stringify 로 그대로 내보내고 클라이언트도 그대로 캐스팅하므로
+// 프로토 재생성 없이 추가 필드가 프론트까지 전달된다(문서화된 계약은 불변).
+export interface KcgAircraftMeta {
+    /** ICAO Doc 8643 형식판정부호(예: H60·B738). 모르면 ''. */
+    aircraftType?: string;
+    /** 등록번호(예: 95-26628). 모르면 ''. */
+    registration?: string;
+    /** ADS-B 에미터 카테고리(A1~A7·B1~B7). A7 = 회전익. 모르면 ''. */
+    emitterCategory?: string;
+}
+
+function parseAdsbAircraft(list: AdsbAircraft[]): Array<PositionSample & KcgAircraftMeta> {
     const now = Date.now();
     return (list ?? [])
         .filter(a => typeof a.lat === 'number' && typeof a.lon === 'number')
-        .map((a): PositionSample => {
+        .map((a): PositionSample & KcgAircraftMeta => {
             const altFt = typeof a.alt_baro === 'number' ? a.alt_baro
                 : typeof a.alt_geom === 'number' ? a.alt_geom : 0;
             return {
@@ -78,6 +92,9 @@ function parseAdsbAircraft(list: AdsbAircraft[]): PositionSample[] {
                 source: 'POSITION_SOURCE_OPENSKY',
                 observedAt: now - (typeof a.seen === 'number' ? a.seen * 1000 : 0),
                 squawk: typeof a.squawk === 'string' ? a.squawk : '',
+                aircraftType: typeof a.t === 'string' ? a.t.trim() : '',
+                registration: typeof a.r === 'string' ? a.r.trim() : '',
+                emitterCategory: typeof a.category === 'string' ? a.category.trim() : '',
             };
         });
 }

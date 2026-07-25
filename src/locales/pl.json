@@ -917,7 +917,8 @@
         "conflict": "Strefa konfliktu",
         "diseaseAlert": "Alert choroby",
         "diseaseWarning": "Ostrzeżenie o chorobie",
-        "diseaseWatch": "Monitoring choroby"
+        "diseaseWatch": "Monitoring choroby",
+        "helicopter": "Helicopter"
       },
       "timeAll": "Wszystko",
       "layers": {

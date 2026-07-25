@@ -1080,7 +1080,8 @@
         "conflict": "Зона на конфликт",
         "diseaseAlert": "Предупреждение за болест",
         "diseaseWarning": "Внимание за болест",
-        "diseaseWatch": "Наблюдение на болест"
+        "diseaseWatch": "Наблюдение на болест",
+        "helicopter": "Helicopter"
       },
       "layerGuide": "Ръководство на слои",
       "layerWarningTitle": "Бележка за производителността",

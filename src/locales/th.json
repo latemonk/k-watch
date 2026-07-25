@@ -1080,7 +1080,8 @@
         "conflict": "พื้นที่ความขัดแย้ง",
         "diseaseAlert": "การแจ้งเตือนโรค",
         "diseaseWarning": "คำเตือนโรค",
-        "diseaseWatch": "การติดตามโรค"
+        "diseaseWatch": "การติดตามโรค",
+        "helicopter": "Helicopter"
       },
       "layerGuide": "คู่มือเลเยอร์",
       "layerWarningTitle": "แจ้งเตือนประสิทธิภาพ",

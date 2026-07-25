@@ -1039,7 +1039,8 @@
         "conflict": "Zone de conflit",
         "diseaseAlert": "Alerte maladie",
         "diseaseWarning": "Avertissement maladie",
-        "diseaseWatch": "Surveillance maladie"
+        "diseaseWatch": "Surveillance maladie",
+        "helicopter": "Helicopter"
       },
       "layerGuide": "Guide des calques",
       "layerWarningTitle": "Avis de performance",

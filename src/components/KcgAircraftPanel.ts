@@ -9,6 +9,7 @@
 import { Panel } from './Panel';
 import { safeHtml, joinSafeHtml, type SafeHtml } from '@/utils/sanitize';
 import { fetchAircraftPositions, type PositionSample } from '@/services/aviation';
+import { isRotorcraft } from '@/config/aircraft-kind';
 import { showToast } from '@/utils/toast';
 import { getKcgWatchlist } from '@/services/kcg-watchlist';
 import { KCG_WATCH_ADDED_EVENT, type KcgWatchAddedDetail, flyWatchChip, pulseWatchRow } from '@/utils/kcg-watch-guide';
@@ -41,7 +42,7 @@ export class KcgAircraftPanel extends Panel {
     super({
       id: 'kcg-aircraft',
       title: '공역 항공기 현황',
-      infoTooltip: '한반도 권역 상공의 실시간 항공기예요. 편명을 누르면 지도가 해당 기체로 이동하고 궤적이 그려져요. 10초마다 갱신되고, 커뮤니티 ADS-B(adsb.lol) 무료 데이터를 써요. 우클릭이나 추적 카드에서 관심 등록한 항공기는 맨 위 관심 추적 줄에 모여요.',
+      infoTooltip: '한반도 권역 상공의 실시간 항공기예요. 편명을 누르면 지도가 해당 기체로 이동하고 궤적이 그려져요. 헬기는 🚁 표식과 기종 코드로 구분해서 보여줘요. 10초마다 갱신되고, 커뮤니티 ADS-B(adsb.lol) 무료 데이터를 써요. 우클릭이나 추적 카드에서 관심 등록한 항공기는 맨 위 관심 추적 줄에 모여요.',
     });
     void this.fetchData();
     this.timer = setInterval(() => void this.fetchData(), REFRESH_MS);
@@ -89,6 +90,8 @@ export class KcgAircraftPanel extends Panel {
     const airborne = this.positions.filter((p) => !p.onGround);
     const ground = this.positions.filter((p) => p.onGround);
     const emergencies = this.positions.filter((p) => EMERGENCY_SQUAWKS.has(p.squawk));
+    // KCG fork(07-25 사장님 지시): 회전익(헬기) 대수 — 고정익과 섞여 세지 않게.
+    const helicopters = this.positions.filter((p) => isRotorcraft(p));
     // 고도 높은 순 정렬(순항기 먼저) — 관제 습관에 맞춤.
     const sorted = [...this.positions].sort((a, b) => {
       if (a.onGround !== b.onGround) return a.onGround ? 1 : -1;
@@ -97,13 +100,15 @@ export class KcgAircraftPanel extends Panel {
 
     const rows = sorted.slice(0, 200).map((p) => {
       const cs = (p.callsign || '').trim() || p.icao24.toUpperCase();
+      // KCG fork(07-25 사장님 지시): 헬기는 편명 앞 🚁 표식 + 기종 코드로 구분.
+      const heli = isRotorcraft(p);
       const emerg = EMERGENCY_SQUAWKS.has(p.squawk);
       const vr = p.verticalRateMps ?? 0;
       const vrFpm = Math.round(vr * 196.85);
       const arrow = vrFpm > 100 ? ' ▲' : vrFpm < -100 ? ' ▼' : '';
       return safeHtml`
         <tr class="${emerg ? 'kca-row-emerg' : ''}" data-focus-lat="${String(p.lat)}" data-focus-lon="${String(p.lon)}" data-icao="${p.icao24}">
-          <td class="kca-td-name kca-td-focus" title="지도에서 보기 · 궤적">${cs}</td>
+          <td class="kca-td-name kca-td-focus" title="지도에서 보기 · 궤적">${heli ? '🚁 ' : ''}${cs}${p.aircraftType ? safeHtml`<span class="kca-td-type">${p.aircraftType}</span>` : safeHtml``}</td>
           <td>${p.onGround ? '지상' : `${(p.altitudeFt ?? 0).toLocaleString()} ft${arrow}`}</td>
           <td>${Math.round(p.groundSpeedKts ?? 0)} kt</td>
           <td>${Math.round(p.trackDeg ?? 0)}°</td>
@@ -149,6 +154,7 @@ export class KcgAircraftPanel extends Panel {
       <div class="kca-stats">
         ${stat('공중', airborne.length)}
         ${stat('지상', ground.length)}
+        ${stat('헬기', helicopters.length)}
         ${stat('비상 스쿼크', emergencies.length, emergencies.length ? 'kca-stat-emerg' : '')}
       </div>
       ${this.positions.length === 0
@@ -169,6 +175,7 @@ export class KcgAircraftPanel extends Panel {
         .kca-table th { text-align: left; color: var(--text-dim,#8aa); font-size: 11px; padding: 4px 7px; border-bottom: 1px solid rgba(255,255,255,0.12); position: sticky; top: 0; background: var(--panel-bg,#0d1420); }
         .kca-table td { padding: 4px 7px; border-bottom: 1px solid rgba(255,255,255,0.05); white-space: nowrap; font-variant-numeric: tabular-nums; }
         .kca-td-name { font-weight: 600; color: var(--text,#e8f2fa); }
+        .kca-td-type { color: var(--text-dim,#8aa); font-weight: 400; font-size: 10px; margin-left: 5px; }
         .kca-td-focus { cursor: pointer; }
         .kca-td-focus:hover { color: #7fd4ff; text-decoration: underline; }
         .kca-td-alt { color: var(--text-dim,#9ab); }
@@ -212,6 +219,10 @@ export class KcgAircraftPanel extends Panel {
         const lon = Number((el as HTMLElement).dataset.focusLon);
         const icao = (el as HTMLElement).dataset.icao || '';
         if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+        // KCG fork(07-25): 지도가 아직 이 기체를 안 받았을 수도 있으니 이 패널이
+        // 들고 있는 기체 정보(콜사인·기종·등록번호·카테고리)를 같이 넘겨
+        // 추적 카드가 즉시 「헬기 · H60 · 95-26628」로 채워지게 한다.
+        const p = this.positions.find((q) => (q.icao24 || '').toLowerCase() === icao.toLowerCase());
         try {
           // 사장님 지시 07-23: 확대 보기(모달형)면 선택 즉시 닫아 지도가 보이게.
           if (this.element.classList.contains('panel-maximized')) {
@@ -221,7 +232,15 @@ export class KcgAircraftPanel extends Panel {
           // 리스너가 icao24 로 하이라이트하고 focus 리스너가 화면을 옮긴다.
           window.dispatchEvent(new CustomEvent('kcg:highlight-aircraft', { detail: { icao24: icao, lat, lon } }));
           window.dispatchEvent(new CustomEvent('kcg:map-focus', { detail: { lat, lon, zoom: 9 } }));
-          window.dispatchEvent(new CustomEvent('kcg:select-aircraft', { detail: { icao24: icao, lat, lon } }));
+          window.dispatchEvent(new CustomEvent('kcg:select-aircraft', {
+            detail: {
+              icao24: icao, lat, lon,
+              callsign: (p?.callsign || '').trim(),
+              aircraftType: p?.aircraftType || '',
+              registration: p?.registration || '',
+              emitterCategory: p?.emitterCategory || '',
+            },
+          }));
           showToast('지도를 해당 항공기로 옮겼어요');
         } catch { /* SSR/테스트 */ }
       };

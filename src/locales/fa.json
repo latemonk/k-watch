@@ -1221,7 +1221,8 @@
         "conflict": "Conflict Zone",
         "diseaseAlert": "Disease Alert",
         "diseaseWarning": "Disease Warning",
-        "diseaseWatch": "Disease Watch"
+        "diseaseWatch": "Disease Watch",
+        "helicopter": "Helicopter"
       },
       "layerGuide": "Layer Guide",
       "layerWarningTitle": "Performance notice",

@@ -539,7 +539,8 @@
         "conflict": "Zona de Conflito",
         "diseaseAlert": "Alerta de Doença",
         "diseaseWarning": "Aviso de Doença",
-        "diseaseWatch": "Monitoramento de Doença"
+        "diseaseWatch": "Monitoramento de Doença",
+        "helicopter": "Helicopter"
       },
       "timeAll": "Todos",
       "layers": {

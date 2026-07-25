@@ -1214,6 +1214,7 @@
         "base": "Base",
         "nuclear": "Nuclear",
         "aircraft": "Aircraft",
+        "helicopter": "Helicopter",
         "miningSite": "Mining Site",
         "commodityPort": "Commodity Port",
         "pipeline": "Pipeline",

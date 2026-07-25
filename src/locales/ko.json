@@ -1073,6 +1073,7 @@
         "base": "기지",
         "nuclear": "핵",
         "aircraft": "항공기",
+        "helicopter": "헬기",
         "miningSite": "광산",
         "commodityPort": "상품 항구",
         "pipeline": "파이프라인",

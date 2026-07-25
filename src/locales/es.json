@@ -946,7 +946,8 @@
         "conflict": "Zona de conflicto",
         "diseaseAlert": "Alerta de enfermedad",
         "diseaseWarning": "Advertencia de enfermedad",
-        "diseaseWatch": "Vigilancia de enfermedad"
+        "diseaseWatch": "Vigilancia de enfermedad",
+        "helicopter": "Helicopter"
       },
       "timeAll": "Todo",
       "layers": {

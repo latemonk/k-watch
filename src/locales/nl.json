@@ -539,7 +539,8 @@
         "conflict": "Conflictzone",
         "diseaseAlert": "Ziekte-waarschuwing",
         "diseaseWarning": "Ziekte-alarm",
-        "diseaseWatch": "Ziektetoezicht"
+        "diseaseWatch": "Ziektetoezicht",
+        "helicopter": "Helicopter"
       },
       "timeAll": "Alle",
       "layers": {

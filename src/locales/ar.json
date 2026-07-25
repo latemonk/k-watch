@@ -1045,7 +1045,8 @@
         "conflict": "منطقة صراع",
         "diseaseAlert": "تنبيه مرض",
         "diseaseWarning": "تحذير مرض",
-        "diseaseWatch": "مراقبة مرض"
+        "diseaseWatch": "مراقبة مرض",
+        "helicopter": "Helicopter"
       },
       "layerGuide": "دليل الطبقات",
       "layerWarningTitle": "ملاحظة حول الأداء",

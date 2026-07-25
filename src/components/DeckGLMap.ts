@@ -42,6 +42,7 @@ import { fetchMilitaryBases, type MilitaryBaseCluster as ServerBaseCluster } fro
 import type { AirportDelayAlert, PositionSample } from '@/services/aviation';
 import { fetchAircraftPositions } from '@/services/aviation';
 import { type IranEvent, getIranEventColor, getIranEventRadius } from '@/services/conflict';
+import { isRotorcraft } from '@/config/aircraft-kind';
 import { getMilitaryBaseColor } from '@/config/military-base-colors';
 import { getMineralColor } from '@/config/mineral-colors';
 import { getWindColor } from '@/config/wind-colors';
@@ -345,6 +346,25 @@ function getOverlayColors() {
 // Initialize and refresh on every buildLayers() call
 let COLORS = getOverlayColors();
 
+// 32x32 실루엣 조각(북향 기준 — IconLayer 가 trackDeg 로 회전시킨다).
+// 고정익: 동체 + 주익 + 수평미익. mask:true 라 색은 런타임에 입힌다.
+const planeSilhouette = (color: string) =>
+  `<path d="M16 2 L17.5 10 L17 12 L27 17 L27 19 L17 16 L17 24 L20 26.5 L20 28 L16 27 L12 28 L12 26.5 L15 24 L15 16 L5 19 L5 17 L15 12 L14.5 10 Z" fill="${color}"/>`;
+
+// KCG fork(07-25 사장님 지시): 헬기 실루엣 — 로터 디스크(옅은 원) + 회전날개
+// 축 + 슬림 캐빈 + 테일붐 + 테일로터. 원이 들어가야 14px 로 줄어도 고정익과
+// 안 헷갈린다(후보 5종을 실제 렌더로 비교해 고름).
+const helicopterSilhouette = (color: string) => [
+  `<g fill="${color}">`,
+  `<circle cx="16" cy="12" r="12.6" fill="none" stroke="${color}" stroke-width="0.85" opacity="0.5"/>`,
+  '<rect x="2.2" y="11.42" width="27.6" height="1.15" rx="0.57" transform="rotate(20 16 12)"/>',
+  '<path d="M16 3.6 C18.4 3.6 19.8 6.2 19.8 9.8 L19.8 15.6 C19.8 17.9 18.1 19.4 16 19.4 C13.9 19.4 12.2 17.9 12.2 15.6 L12.2 9.8 C12.2 6.2 13.6 3.6 16 3.6 Z"/>',
+  '<rect x="15.15" y="18.6" width="1.7" height="9.4"/>',
+  '<rect x="16" y="26.1" width="5.4" height="1.4" rx="0.7"/>',
+  '<circle cx="16" cy="12" r="1.2"/>',
+  '</g>',
+].join('');
+
 // SVG icons as data URLs for different marker shapes
 const MARKER_ICONS = {
   // Square - for datacenters
@@ -359,14 +379,28 @@ const MARKER_ICONS = {
   circle: 'data:image/svg+xml;base64,' + btoa(`<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><circle cx="16" cy="16" r="14" fill="white"/></svg>`),
   // Star - for special markers
   star: 'data:image/svg+xml;base64,' + btoa(`<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><polygon points="16,2 20,12 30,12 22,19 25,30 16,23 7,30 10,19 2,12 12,12" fill="white"/></svg>`),
-  // Airplane silhouette - top-down with wings and tail (pointing north, rotated by trackDeg)
-  plane: 'data:image/svg+xml;base64,' + btoa(`<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><path d="M16 2 L17.5 10 L17 12 L27 17 L27 19 L17 16 L17 24 L20 26.5 L20 28 L16 27 L12 28 L12 26.5 L15 24 L15 16 L5 19 L5 17 L15 12 L14.5 10 Z" fill="white"/></svg>`),
+  // 항공기(고정익/회전익)는 아이콘 2종을 한 아틀라스에 담아 쓴다 →
+  // AIRCRAFT_ICON_ATLAS.
 };
+
+// KCG fork(07-25 사장님 지시): 항공기 아이콘 아틀라스 = 고정익(0..32) +
+// 헬기(32..64). deck.gl IconLayer 는 아틀라스 한 장 + 매핑으로 여러 모양을
+// 쓰므로, SVG 하나에 두 실루엣을 가로로 이어 붙인다(mask:true → 색은 고도
+// 그라디언트가 결정).
+const AIRCRAFT_ICON_ATLAS = 'data:image/svg+xml;base64,' + btoa(
+  `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="32" viewBox="0 0 64 32">`
+  + planeSilhouette('white')
+  + `<g transform="translate(32 0)">${helicopterSilhouette('white')}</g>`
+  + `</svg>`,
+);
 
 const BASES_ICON_MAPPING = { triangleUp: { x: 0, y: 0, width: 32, height: 32, mask: true } };
 const NUCLEAR_ICON_MAPPING = { hexagon: { x: 0, y: 0, width: 32, height: 32, mask: true } };
 const DATACENTER_ICON_MAPPING = { square: { x: 0, y: 0, width: 32, height: 32, mask: true } };
-const AIRCRAFT_ICON_MAPPING = { plane: { x: 0, y: 0, width: 32, height: 32, mask: true } };
+const AIRCRAFT_ICON_MAPPING = {
+  plane: { x: 0, y: 0, width: 32, height: 32, mask: true },
+  helicopter: { x: 32, y: 0, width: 32, height: 32, mask: true },
+};
 
 const CONFLICT_COUNTRY_ISO: Record<string, string[]> = {
   iran: ['IR'],
@@ -1006,14 +1040,22 @@ export class DeckGLMap {
 
   /** 공역 항공기 현황 패널 → 항공기 선택(궤적+상세 카드). */
   private kcgSelectAircraftListener = (e: Event): void => {
-    const d = (e as CustomEvent<{ icao24?: string; lat?: number; lon?: number }>).detail;
+    const d = (e as CustomEvent<{
+      icao24?: string; lat?: number; lon?: number; callsign?: string;
+      aircraftType?: string; registration?: string; emitterCategory?: string;
+    }>).detail;
     if (!d?.icao24) return;
     const icao = d.icao24.toLowerCase();
     const existing = this.aircraftPositions.find((p) => (p.icao24 || '').toLowerCase() === icao);
+    // KCG fork(07-25): 지도 뷰포트 페치가 아직 안 끝났으면 이 지도에는 그 기체가
+    // 없다. 그때는 이벤트를 보낸 쪽(현황 패널·경보 패널)이 들고 있는 기체 정보를
+    // 그대로 써서 카드가 「기체 정보 수신 중…」에 머물지 않게 한다.
     const sample: PositionSample = existing ?? {
-      icao24: icao, callsign: '', lat: Number(d.lat), lon: Number(d.lon),
+      icao24: icao, callsign: d.callsign ?? '', lat: Number(d.lat), lon: Number(d.lon),
       altitudeFt: 0, groundSpeedKts: 0, trackDeg: 0, verticalRateMps: 0,
       onGround: false, source: '', observedAt: new Date(), squawk: '',
+      aircraftType: d.aircraftType ?? '', registration: d.registration ?? '',
+      emitterCategory: d.emitterCategory ?? '',
     };
     if (Number.isFinite(sample.lat) && Number.isFinite(sample.lon)) this.selectAircraft(sample);
   };
@@ -1083,7 +1125,8 @@ export class DeckGLMap {
   private pollSelectedAircraft(icao: string): void {
     interface KcgAircraftLive {
       found?: boolean; hex?: string; callsign?: string; registration?: string;
-      aircraftType?: string; squawk?: string; emergency?: string;
+      // category = ADS-B 에미터 카테고리(A7 = 회전익). 헬기 판정에 쓴다.
+      aircraftType?: string; category?: string; squawk?: string; emergency?: string;
       lat?: number; lon?: number; altBaroFt?: number | null; altGeomFt?: number | null;
       onGround?: boolean; gsKt?: number | null; mach?: number | null;
       track?: number | null; baroRateFpm?: number | null; seenPosSec?: number | null;
@@ -1111,6 +1154,11 @@ export class DeckGLMap {
               track: typeof vp.trackDeg === 'number' ? vp.trackDeg : null,
               // 뷰포트 스냅샷도 수직속도(m/s)를 실어오니 fpm 으로 채운다.
               baroRateFpm: typeof vp.verticalRateMps === 'number' && vp.verticalRateMps !== 0 ? Math.round(vp.verticalRateMps * 196.85) : null,
+              // KCG fork(07-25): 기종·등록번호·에미터 카테고리도 스냅샷에 있다.
+              // 단건 조회가 계속 실패해도 「헬기 · H60 · 95-26628」이 남는다.
+              aircraftType: vp.aircraftType || undefined,
+              registration: vp.registration || undefined,
+              category: vp.emitterCategory || undefined,
             });
             if (status) { status.textContent = '실시간 추적 중 (2초 주기)'; status.style.color = '#5fbf7f'; }
           } else if (status) {
@@ -1272,6 +1320,12 @@ export class DeckGLMap {
     // 뷰포트 스냅샷 값으로 즉시 시딩(고도·속도·트랙·스쿼크·위치).
     this.updateKcgAircraftCard({
       callsign: (d.callsign || '').trim() || undefined,
+      // KCG fork(07-25 사장님 지시): 뷰포트 피드가 기종·등록번호·에미터
+      // 카테고리를 이미 실어오니 클릭 즉시 「헬기 · H60 · 95-26628」로 채운다
+      // (예전엔 단건 조회가 돌아올 때까지 '기체 정보 수신 중…'이었다).
+      aircraftType: d.aircraftType || undefined,
+      registration: d.registration || undefined,
+      category: d.emitterCategory || undefined,
       squawk: d.squawk || undefined,
       lat: d.lat, lon: d.lon,
       altBaroFt: typeof d.altitudeFt === 'number' && d.altitudeFt > 0 ? d.altitudeFt : null,
@@ -1282,7 +1336,7 @@ export class DeckGLMap {
   }
 
   private updateKcgAircraftCard(live: {
-    callsign?: string; registration?: string; aircraftType?: string; squawk?: string;
+    callsign?: string; registration?: string; aircraftType?: string; category?: string; squawk?: string;
     emergency?: string; lat?: number; lon?: number; altBaroFt?: number | null;
     onGround?: boolean; gsKt?: number | null; mach?: number | null; track?: number | null;
     baroRateFpm?: number | null; seenPosSec?: number | null; rssi?: number | null;
@@ -1292,6 +1346,9 @@ export class DeckGLMap {
 
     if (live.callsign) set('title', live.callsign);
     const subParts: string[] = [];
+    // KCG fork(07-25 사장님 지시): 회전익이면 기종 앞에 「헬기」를 붙여 카드
+    // 첫 줄에서 바로 구분되게 한다(지도 아이콘 모양과 짝).
+    if (isRotorcraft({ aircraftType: live.aircraftType, emitterCategory: live.category })) subParts.push('헬기');
     if (live.aircraftType) subParts.push(live.aircraftType);
     if (live.registration) subParts.push(live.registration);
     if (subParts.length > 0) set('subtitle', subParts.join(' · '));
@@ -3808,8 +3865,11 @@ export class DeckGLMap {
       id: 'aircraft-positions-layer',
       data: this.aircraftPositions,
       getPosition: (d) => [d.lon, d.lat],
-      getIcon: () => 'plane',
-      iconAtlas: MARKER_ICONS.plane,
+      // KCG fork(07-25 사장님 지시): 회전익(헬기)은 헬기 실루엣으로 구분.
+      // 기종 코드(H60·EC45…) 또는 ADS-B 에미터 카테고리 A7 로 판정하고,
+      // 둘 다 모르면 고정익 실루엣을 유지한다(모양을 함부로 바꾸지 않는다).
+      getIcon: (d) => (isRotorcraft(d) ? 'helicopter' : 'plane'),
+      iconAtlas: AIRCRAFT_ICON_ATLAS,
       iconMapping: AIRCRAFT_ICON_MAPPING,
       // KCG fork(07-23 사장님 지시): adsb.lol 수준으로 확대 — 식별성 우선.
       // KCG fork(07-23 사장님: 더 크게). 기본 28→36·지상 18→22·하이라이트 40→48.
@@ -5631,8 +5691,12 @@ export class DeckGLMap {
         return { html: `<div class="deckgl-tooltip"><strong>${text(obj.name)} (${text(obj.iata)})</strong><br/>${text(obj.severity)}: ${text(obj.reason)}</div>` };
       case 'notam-overlay-layer':
         return { html: `<div class="deckgl-tooltip"><strong style="color:#ff2828;">&#9888; NOTAM CLOSURE</strong><br/>${text(obj.name)} (${text(obj.iata)})<br/><span style="opacity:.7">${text((obj.reason || '').slice(0, 100))}</span></div>` };
-      case 'aircraft-positions-layer':
-        return { html: `<div class="deckgl-tooltip"><strong>${text(obj.callsign || obj.icao24)}</strong><br/>${obj.altitudeFt?.toLocaleString() ?? 0} ft · ${obj.groundSpeedKts ?? 0} kts · ${Math.round(obj.trackDeg ?? 0)}°</div>` };
+      case 'aircraft-positions-layer': {
+        // KCG fork(07-25 사장님 지시): 헬기는 회전익 표식 + 기종 코드까지.
+        const heliTag = isRotorcraft(obj as { aircraftType?: string; emitterCategory?: string }) ? '🚁 ' : '';
+        const typeTag = obj.aircraftType ? `${text(obj.aircraftType)} · ` : '';
+        return { html: `<div class="deckgl-tooltip"><strong>${heliTag}${text(obj.callsign || obj.icao24)}</strong><br/>${typeTag}${obj.altitudeFt?.toLocaleString() ?? 0} ft · ${obj.groundSpeedKts ?? 0} kts · ${Math.round(obj.trackDeg ?? 0)}°</div>` };
+      }
       case 'apt-groups-layer':
         return { html: `<div class="deckgl-tooltip"><strong>${text(obj.name)}</strong><br/>${text(obj.aka)}<br/>${t('popups.sponsor')}: ${text(obj.sponsor)}</div>` };
       case 'minerals-layer':
@@ -6622,6 +6686,10 @@ export class DeckGLMap {
       triangle: (color: string) => `<svg width="12" height="12" viewBox="0 0 12 12"><polygon points="6,1 11,10 1,10" fill="${color}"/></svg>`,
       square: (color: string) => `<svg width="12" height="12" viewBox="0 0 12 12"><rect x="1" y="1" width="10" height="10" rx="1" fill="${color}"/></svg>`,
       hexagon: (color: string) => `<svg width="12" height="12" viewBox="0 0 12 12"><polygon points="6,1 10.5,3.5 10.5,8.5 6,11 1.5,8.5 1.5,3.5" fill="${color}"/></svg>`,
+      // KCG fork(07-25 사장님 지시): 범례도 지도 아이콘과 같은 실루엣으로 —
+      // 고정익/회전익을 색이 아니라 모양으로 구분하니 범례가 모양을 보여야 한다.
+      plane: (color: string) => `<svg width="12" height="12" viewBox="0 0 32 32">${planeSilhouette(color)}</svg>`,
+      helicopter: (color: string) => `<svg width="13" height="13" viewBox="0 0 32 32">${helicopterSilhouette(color)}</svg>`,
     };
 
     const isLight = getCurrentTheme() === 'light';
@@ -6665,7 +6733,8 @@ export class DeckGLMap {
             { shape: shapes.square('rgb(34, 180, 100)'), label: 'Happy Country', layerKey: 'happiness' },
             { shape: shapes.circle('rgb(74, 222, 128)'), label: 'Species Recovery Zone', layerKey: 'speciesRecovery' },
             { shape: shapes.circle('rgb(255, 200, 50)'), label: 'Renewable Installation', layerKey: 'renewableInstallations' },
-            { shape: shapes.circle('rgb(160, 100, 255)'), label: t('components.deckgl.legend.aircraft'), layerKey: 'flights' },
+            { shape: shapes.plane('rgb(160, 100, 255)'), label: t('components.deckgl.legend.aircraft'), layerKey: 'flights' },
+            { shape: shapes.helicopter('rgb(160, 100, 255)'), label: t('components.deckgl.legend.helicopter'), layerKey: 'flights' },
             { shape: shapes.circle('rgb(231, 76, 60)'), label: t('components.deckgl.legend.diseaseAlert'), layerKey: 'diseaseOutbreaks' },
             { shape: shapes.circle('rgb(230, 126, 34)'), label: t('components.deckgl.legend.diseaseWarning'), layerKey: 'diseaseOutbreaks' },
             { shape: shapes.circle('rgb(241, 196, 15)'), label: t('components.deckgl.legend.diseaseWatch'), layerKey: 'diseaseOutbreaks' },
@@ -6692,7 +6761,8 @@ export class DeckGLMap {
               { shape: shapes.triangle('rgb(68, 136, 255)'), label: t('components.deckgl.legend.base'), layerKey: 'bases' },
               { shape: shapes.hexagon(isLight ? 'rgb(180, 120, 0)' : 'rgb(255, 220, 0)'), label: t('components.deckgl.legend.nuclear'), layerKey: 'nuclear' },
               { shape: shapes.square('rgb(136, 68, 255)'), label: t('components.deckgl.legend.datacenter'), layerKey: 'datacenters' },
-              { shape: shapes.circle('rgb(160, 100, 255)'), label: t('components.deckgl.legend.aircraft'), layerKey: 'flights' },
+              { shape: shapes.plane('rgb(160, 100, 255)'), label: t('components.deckgl.legend.aircraft'), layerKey: 'flights' },
+              { shape: shapes.helicopter('rgb(160, 100, 255)'), label: t('components.deckgl.legend.helicopter'), layerKey: 'flights' },
               { shape: shapes.circle('rgb(231, 76, 60)'), label: t('components.deckgl.legend.diseaseAlert'), layerKey: 'diseaseOutbreaks' },
               { shape: shapes.circle('rgb(230, 126, 34)'), label: t('components.deckgl.legend.diseaseWarning'), layerKey: 'diseaseOutbreaks' },
               { shape: shapes.circle('rgb(241, 196, 15)'), label: t('components.deckgl.legend.diseaseWatch'), layerKey: 'diseaseOutbreaks' },

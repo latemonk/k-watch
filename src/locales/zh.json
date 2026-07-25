@@ -1080,7 +1080,8 @@
         "conflict": "冲突区域",
         "diseaseAlert": "疾病警报",
         "diseaseWarning": "疾病预警",
-        "diseaseWatch": "疾病监测"
+        "diseaseWatch": "疾病监测",
+        "helicopter": "Helicopter"
       },
       "layerGuide": "图层指南",
       "layerWarningTitle": "性能提示",

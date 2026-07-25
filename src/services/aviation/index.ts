@@ -96,6 +96,14 @@ export interface PositionSample {
   observedAt: Date;
   /** Transponder squawk ("" when unknown). 7500/7600/7700 = emergency. */
   squawk: string;
+  // KCG fork(07-25 사장님 지시): 헬기/고정익 구분용 기체 메타. 커뮤니티 ADS-B
+  // 피드에서만 채워지고(OpenSky 상태벡터에는 없음), 모르면 ''.
+  /** ICAO Doc 8643 형식판정부호(예: H60·B738). */
+  aircraftType: string;
+  /** 등록번호(예: 95-26628). */
+  registration: string;
+  /** ADS-B 에미터 카테고리(A1~A7·B1~B7). A7 = 회전익. */
+  emitterCategory: string;
 }
 
 export interface PriceQuote {
@@ -270,6 +278,9 @@ function toDisplayCarrierOps(p: ProtoCarrierOps): CarrierOps {
 }
 
 function toDisplayPosition(p: ProtoPosition): PositionSample {
+  // KCG fork(07-25): 기체 메타(기종·등록번호·에미터 카테고리)는 프로토 계약
+  // 밖의 포크 확장 필드라 좁혀진 타입으로 읽는다(없으면 '').
+  const meta = p as ProtoPosition & { aircraftType?: string; registration?: string; emitterCategory?: string };
   return {
     icao24: p.icao24, callsign: p.callsign, lat: p.lat, lon: p.lon,
     altitudeFt: Math.round(p.altitudeM * 3.281),
@@ -277,6 +288,9 @@ function toDisplayPosition(p: ProtoPosition): PositionSample {
     verticalRateMps: p.verticalRate,
     source: p.source, observedAt: new Date(p.observedAt),
     squawk: p.squawk ?? '',
+    aircraftType: meta.aircraftType ?? '',
+    registration: meta.registration ?? '',
+    emitterCategory: meta.emitterCategory ?? '',
   };
 }
 

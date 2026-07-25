@@ -1221,7 +1221,8 @@
         "conflict": "Konfliktuszóna",
         "diseaseAlert": "Betegség-riasztás",
         "diseaseWarning": "Betegség-figyelmeztetés",
-        "diseaseWatch": "Betegség-megfigyelés"
+        "diseaseWatch": "Betegség-megfigyelés",
+        "helicopter": "Helicopter"
       },
       "layerGuide": "Réteg útmutató",
       "layerWarningTitle": "Teljesítményre vonatkozó figyelmeztetés",

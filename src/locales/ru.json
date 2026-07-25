@@ -1084,7 +1084,8 @@
         "conflict": "Зона конфликта",
         "diseaseAlert": "Оповещение о болезни",
         "diseaseWarning": "Предупреждение о болезни",
-        "diseaseWatch": "Наблюдение за болезнью"
+        "diseaseWatch": "Наблюдение за болезнью",
+        "helicopter": "Helicopter"
       },
       "layerGuide": "Справочник слоёв",
       "layerWarningTitle": "Уведомление о производительности",
