@@ -37,6 +37,27 @@ function getRatelimit() {
   return _rl;
 }
 
+// The consent-page GET is unauthenticated and performs two Redis writes per
+// request (client TTL refresh + a fresh 600s nonce key), so anyone holding a
+// registered client_id could inflate Redis storage and request cost with a
+// plain GET loop. The POST path was limited; the GET path was not.
+let _rlGet = null;
+function getConsentPageRatelimit() {
+  if (_rlGet) return _rlGet;
+  const url = process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!url || !token) return null;
+  _rlGet = new Ratelimit({
+    redis: new Redis({ url, token }),
+    // Looser than the POST limit: a human retrying the consent screen, or a
+    // client re-running discovery, legitimately loads this a few times.
+    limiter: Ratelimit.slidingWindow(30, '60 s'),
+    prefix: 'rl:oauth-authorize-get',
+    analytics: false,
+  });
+  return _rlGet;
+}
+
 function escapeHtml(str) {
   return String(str)
     .replace(/&/g, '&amp;')
@@ -203,6 +224,19 @@ export default async function handler(req) {
   }
 
   if (method === 'GET') {
+    const rlGet = getConsentPageRatelimit();
+    if (rlGet) {
+      try {
+        const { success } = await rlGet.limit(`ip:${getClientIp(req)}`);
+        if (!success) {
+          return new Response('Too Many Requests', {
+            status: 429,
+            headers: { 'Retry-After': '60', 'Cache-Control': 'no-store' },
+          });
+        }
+      } catch { /* graceful degradation — never fail the flow on limiter error */ }
+    }
+
     const url = new URL(req.url);
     const p = url.searchParams;
     const client_id = p.get('client_id');

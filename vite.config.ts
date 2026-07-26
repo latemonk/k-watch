@@ -18,7 +18,11 @@ import {
 
 const brotliCompressAsync = promisify(brotliCompress);
 const BROTLI_EXTENSIONS = new Set(['.js', '.mjs', '.css', '.html', '.svg', '.json', '.txt', '.xml', '.wasm']);
-const STATIC_SCRIPT_NONCE = 'wm-static-bootstrap';
+// NOTE: there is deliberately no `html.cspNonce` here any more. A nonce baked
+// into the build is a constant published in every response, which any attacker
+// can read and replay — it is not a nonce. Scripts are allowed by 'self' plus
+// an explicit host allowlist, and inline scripts by sha256 hashes generated in
+// scripts/generate-csp-script-hashes.mjs.
 
 // @clerk/clerk-js is loaded as a UMD bundle from the Clerk Frontend API at
 // runtime (src/services/clerk.ts), not bundled. Resolve the version from
@@ -936,9 +940,6 @@ export default defineConfig(({ mode }) => {
   const activeMeta = VARIANT_META[activeVariant] || VARIANT_META.full;
 
   return {
-    html: {
-      cspNonce: STATIC_SCRIPT_NONCE,
-    },
     define: {
       __APP_VERSION__: JSON.stringify(pkg.version),
       // Resolved + build-time validated above (devDependencies fallback +

@@ -23,6 +23,11 @@ RUN node docker/build-handlers.mjs
 # KCG fork: crawlable corpus(원본 SEO 페이지 ~200장)·sitemap 코퍼스 생성 제외 —
 # 원본 브랜드 콘텐츠가 우리 도메인에 서빙되는 것 방지(탈브랜딩 07-21).
 RUN npx tsc && npx vite build
+# Recompute the CSP inline-script hashes from what vite actually emitted and
+# write them into docker/nginx*.conf. Must run after vite build and before the
+# final stage copies the conf — the conf is taken from THIS stage (not the
+# build context) so the shipped header always matches the shipped HTML.
+RUN node scripts/generate-csp-script-hashes.mjs
 
 # ── Stage 2: Runtime dependencies (raw api/*.js handlers) ───────────────────
 FROM node:24-alpine AS runtime-deps
@@ -77,7 +82,7 @@ COPY --from=redis-rest-deps /rest /rest
 COPY --from=builder /app/docker/redis-rest-proxy.mjs /rest/redis-rest-proxy.mjs
 
 # Nginx + supervisord + entrypoint
-COPY docker/nginx.conf /etc/nginx/nginx.conf.template
+COPY --from=builder /app/docker/nginx.conf /etc/nginx/nginx.conf.template
 COPY docker/supervisord-onpod.conf /etc/supervisor/conf.d/worldmonitor.conf
 COPY docker/entrypoint-onpod.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh

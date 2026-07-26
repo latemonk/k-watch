@@ -14,6 +14,10 @@ declare const __CLERK_JS_VERSION__: string;
 interface ImportMetaEnv {
   readonly VITE_SENTRY_DSN?: string;
   readonly VITE_WS_API_URL?: string;
+  // Umami analytics — opt-in, unset by default. See src/services/analytics.ts.
+  readonly VITE_UMAMI_SCRIPT_SRC?: string;
+  readonly VITE_UMAMI_WEBSITE_ID?: string;
+  readonly VITE_UMAMI_DOMAINS?: string;
 }
 
 interface ImportMeta {

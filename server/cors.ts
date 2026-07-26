@@ -6,12 +6,15 @@
  */
 
 const PRODUCTION_PATTERNS: RegExp[] = [
-  /^https:\/\/(.*\.)?worldmonitor\.app$/,
-  // Vercel preview deployments under the "eliewm" team scope, e.g.
-  //   worldmonitor-git-<branch>-eliewm.vercel.app  (git-branch alias)
-  //   worldmonitor-<hash>-eliewm.vercel.app        (deployment URL)
-  // Tight on purpose: never a bare *.vercel.app (this is a security allowlist).
-  /^https:\/\/worldmonitor-[a-z0-9-]+-eliewm\.vercel\.app$/,
+  // K-Watch's own origin. This is a CORS allowlist paired with
+  // Access-Control-Allow-Credentials: true, so every entry is a domain whose
+  // pages may make authenticated cross-origin calls to this API. The upstream
+  // worldmonitor.app hosts (and upstream's Vercel preview scope) were removed
+  // — this fork does not control them, and trusting a third party's domain
+  // with credentialed CORS is a standing grant we cannot revoke.
+  // Exactly one host: no wildcard. A *.onpod.ai pattern would hand every
+  // other tenant on the platform a credentialed cross-origin grant.
+  /^https:\/\/k-watch\.onpod\.ai$/,
   /^https?:\/\/tauri\.localhost(:\d+)?$/,
   /^https?:\/\/[a-z0-9-]+\.tauri\.localhost(:\d+)?$/i,
   /^tauri:\/\/localhost$/,
@@ -65,7 +68,7 @@ export function isAllowedOrigin(origin: string): boolean {
 
 export function getCorsHeaders(req: Request): Record<string, string> {
   const origin = req.headers.get('origin') || '';
-  const allowOrigin = isAllowedOrigin(origin) ? origin : 'https://worldmonitor.app';
+  const allowOrigin = isAllowedOrigin(origin) ? origin : 'https://k-watch.onpod.ai';
   return {
     'Access-Control-Allow-Origin': allowOrigin,
     'Access-Control-Allow-Credentials': 'true',

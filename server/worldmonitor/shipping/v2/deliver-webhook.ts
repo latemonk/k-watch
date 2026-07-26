@@ -39,6 +39,12 @@ export interface WebhookDeliveryResult {
 }
 
 const WEBHOOK_DELIVERY_TIMEOUT_MS = 10_000;
+// The callback endpoint is entirely attacker-chosen (a Pro caller registers
+// any HTTPS URL), so its response is untrusted input. Cap what we buffer.
+// Matches scripts/lib/notification-webhook-ssrf.cjs, which already had both
+// this cap and the hard deadline below; this file is the same pattern and
+// drifted without them.
+const MAX_WEBHOOK_RESPONSE_BYTES = 1024 * 1024;
 
 function responseFromNode(statusCode: number | undefined, statusMessage: string | undefined, headers: Headers, body: Buffer): Response {
   return new Response(new Uint8Array(body), {
@@ -58,9 +64,25 @@ async function postJsonWithPinnedAddress(
   if (!pinnedAddress) {
     throw new WebhookDeliverySsrfError('callbackUrl DNS resolution returned no addresses');
   }
+  // Re-check the address we are about to pin the socket to. Callers reach this
+  // via assertWebhookDeliveryUrlSafe(), which already vetted the whole list, so
+  // this is redundant today — it exists so a future caller that assembles
+  // resolvedAddresses itself cannot skip the check.
+  if (isBlockedResolvedAddress(pinnedAddress)) {
+    throw new WebhookDeliverySsrfError(`callbackUrl resolves to a private/reserved address: ${pinnedAddress}`);
+  }
   const family: 4 | 6 = pinnedAddress.includes(':') ? 6 : 4;
 
   return new Promise((resolve, reject) => {
+    let settled = false;
+    let hardDeadline: NodeJS.Timeout | undefined;
+    const settle = <T>(fn: (value: T) => void, value: T): void => {
+      if (settled) return;
+      settled = true;
+      if (hardDeadline) clearTimeout(hardDeadline);
+      fn(value);
+    };
+
     const req = https.request({
       hostname: url.hostname,
       port: url.port || 443,
@@ -74,21 +96,36 @@ async function postJsonWithPinnedAddress(
       lookup: (_hostname, _options, callback) => callback(null, pinnedAddress, family),
     }, (res) => {
       const chunks: Buffer[] = [];
-      res.on('error', reject);
-      res.on('data', chunk => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+      let totalBytes = 0;
+      res.on('error', error => settle(reject, error));
+      res.on('data', chunk => {
+        const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        totalBytes += buffer.length;
+        if (totalBytes > MAX_WEBHOOK_RESPONSE_BYTES) {
+          req.destroy(new Error('webhook response too large'));
+          return;
+        }
+        chunks.push(buffer);
+      });
       res.on('end', () => {
         const responseHeaders = new Headers();
         for (const [key, value] of Object.entries(res.headers)) {
           if (!value) continue;
           responseHeaders.set(key, Array.isArray(value) ? value.join(', ') : value);
         }
-        resolve(responseFromNode(res.statusCode, res.statusMessage, responseHeaders, Buffer.concat(chunks)));
+        settle(resolve, responseFromNode(res.statusCode, res.statusMessage, responseHeaders, Buffer.concat(chunks)));
       });
     });
-    req.on('error', reject);
+    req.on('error', error => settle(reject, error));
+    // setTimeout() is a socket INACTIVITY timeout: an endpoint that dribbles a
+    // byte every few seconds keeps resetting it and holds the request open
+    // forever. The hard deadline below bounds total wall-clock regardless.
     req.setTimeout(WEBHOOK_DELIVERY_TIMEOUT_MS, () => {
       req.destroy(new Error('webhook delivery timed out'));
     });
+    hardDeadline = setTimeout(() => {
+      req.destroy(new Error('webhook delivery timed out'));
+    }, WEBHOOK_DELIVERY_TIMEOUT_MS);
     req.write(body);
     req.end();
   });

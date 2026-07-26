@@ -7,8 +7,10 @@ function makeRequest(origin) {
   if (origin !== null) {
     headers.set('origin', origin);
   }
-  return new Request('https://worldmonitor.app/api/test', { headers });
+  return new Request('https://k-watch.onpod.ai/api/test', { headers });
 }
+
+const OWN_ORIGIN = 'https://k-watch.onpod.ai';
 
 test('allows desktop Tauri origins', () => {
   const origins = [
@@ -32,8 +34,36 @@ test('rejects unrelated external origins', () => {
   const req = makeRequest('https://evil.example.com');
   assert.equal(isDisallowedOrigin(req), true);
   const cors = getCorsHeaders(req);
-  assert.equal(cors['Access-Control-Allow-Origin'], 'https://worldmonitor.app');
+  assert.equal(cors['Access-Control-Allow-Origin'], OWN_ORIGIN);
   assert.equal(cors['Access-Control-Allow-Credentials'], 'true');
+});
+
+test('allows our own origin', () => {
+  const req = makeRequest(OWN_ORIGIN);
+  assert.equal(isDisallowedOrigin(req), false);
+  assert.equal(getCorsHeaders(req)['Access-Control-Allow-Origin'], OWN_ORIGIN);
+});
+
+// This allowlist is paired with Access-Control-Allow-Credentials: true, so an
+// entry is a standing grant for that domain's pages to make authenticated
+// calls here. Upstream's worldmonitor.app is a third party to this fork; it
+// was inherited from the upstream snapshot and must stay out. Same for the
+// rest of the onpod platform — a *.onpod.ai wildcard would hand every
+// co-tenant the same grant.
+test('does not trust upstream or co-tenant origins', () => {
+  const untrusted = [
+    'https://worldmonitor.app',
+    'https://www.worldmonitor.app',
+    'https://api.worldmonitor.app',
+    'https://worldmonitor-abc-eliewm.vercel.app',
+    'https://agent-store.onpod.ai',
+    'https://onpod.ai',
+    'https://k-watch.onpod.ai.evil.example',
+    'http://k-watch.onpod.ai',
+  ];
+  for (const origin of untrusted) {
+    assert.equal(isDisallowedOrigin(makeRequest(origin)), true, `origin must be rejected: ${origin}`);
+  }
 });
 
 test('requests without origin remain allowed', () => {
@@ -42,7 +72,7 @@ test('requests without origin remain allowed', () => {
 });
 
 test('CORS allow headers include MCP transport headers', () => {
-  const privateCors = getCorsHeaders(makeRequest('https://worldmonitor.app'));
+  const privateCors = getCorsHeaders(makeRequest(OWN_ORIGIN));
   const publicCors = getPublicCorsHeaders('POST, GET, OPTIONS');
 
   for (const cors of [privateCors, publicCors]) {

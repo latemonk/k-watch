@@ -108,8 +108,14 @@ const VARIANT_OG: Record<string, { name: string; title: string; description: str
   },
 };
 
+// NOTE: this middleware only runs on the Vercel deployment path. K-Watch ships
+// as the single-container nginx image (Dockerfile.onpod), so nothing here is
+// live for k-watch.onpod.ai — but the host list is still an allowlist and must
+// name our host, not upstream's. VARIANT_HOST_MAP below is upstream's
+// multi-variant subdomain scheme; it is left in place because the variant stub
+// it feeds is keyed on those hosts and simply never matches ours.
 const ALLOWED_HOSTS = new Set([
-  'worldmonitor.app',
+  'k-watch.onpod.ai',
   ...Object.keys(VARIANT_HOST_MAP),
 ]);
 const VERCEL_PREVIEW_RE = /^[a-z0-9-]+-[a-z0-9]{8,}\.vercel\.app$/;

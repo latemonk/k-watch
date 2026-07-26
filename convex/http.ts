@@ -5,9 +5,12 @@ import { webhookHandler } from "./payments/webhookHandlers";
 import { resendWebhookHandler } from "./resendWebhookHandler";
 import { USER_PREFS_WRITE_RATE_LIMIT } from "./constants";
 
+// Exact origins only. The previous list carried "*.worldmonitor.app", matched
+// with origin.endsWith(".worldmonitor.app") — that ignored the scheme entirely
+// (http://x.worldmonitor.app passed) and, more to the point, granted upstream's
+// domain access to this fork's Convex endpoints.
 const TRUSTED = [
-  "https://worldmonitor.app",
-  "*.worldmonitor.app",
+  "https://k-watch.onpod.ai",
   "http://localhost:3000",
 ];
 
@@ -18,10 +21,16 @@ const EXPOSED_HEADERS = [
   "X-RateLimit-Reset",
 ].join(", ");
 
+/**
+ * Exact string equality against the allowlist.
+ *
+ * The old suffix form (`pattern.startsWith("*.")` → `origin.endsWith(...)`)
+ * compared only the tail of the Origin, so the scheme was never checked and
+ * any host ending in the suffix matched. If a wildcard is ever genuinely
+ * needed, parse the Origin with `new URL()` and compare protocol, hostname,
+ * and port separately — do not go back to string suffixes.
+ */
 function matchOrigin(origin: string, pattern: string): boolean {
-  if (pattern.startsWith("*.")) {
-    return origin.endsWith(pattern.slice(1));
-  }
   return origin === pattern;
 }
 
@@ -32,6 +41,10 @@ function allowedOrigin(origin: string | null, trusted: string[]): string | null 
 
 function corsHeaders(origin: string | null): Headers {
   const headers = new Headers();
+  // Always Vary on Origin, including on the not-allowed path: the response
+  // body/headers differ per Origin, so a shared cache that stored one origin's
+  // response and replayed it to another would either leak or wrongly block.
+  headers.set("Vary", "Origin");
   const allowed = allowedOrigin(origin, TRUSTED);
   if (allowed) {
     headers.set("Access-Control-Allow-Origin", allowed);

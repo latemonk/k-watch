@@ -164,10 +164,16 @@ if changed '^(api/|server/|scripts/enforce-rate-limit-policies\.mjs$)'; then
   npm run lint:rate-limit-policies || exit 1
 fi
 
-if changed '^(src/|api/|scripts/enforce-premium-fetch\.mjs$)'; then
-  echo "Running premium-fetch parity check..."
-  npm run lint:premium-fetch || exit 1
-fi
+# KCG fork: the premium-fetch parity check is intentionally NOT run here.
+# It asserts that every PREMIUM_RPC_PATHS entry has a matching premiumFetch
+# call site, and hard-errors when that set is empty. This fork removed the Pro
+# paywall, so src/shared/premium-paths.ts exports an empty Set and the check
+# exited 1 on EVERY push touching src/ or api/ — which meant the honest way to
+# push anything was `--no-verify`, silently skipping the rate-limit policy,
+# Sentry-coverage, safe-html, and esbuild-bundle gates above and below it too.
+# A gate that can only be satisfied by disabling every other gate is worse than
+# no gate. CI drops it for the same reason (.github/workflows/lint-code.yml).
+# Restore this block together with PREMIUM_RPC_PATHS if paid tiers come back.
 
 if changed '^(api/|server/|src/generated/)'; then
   # Edge RPC entries under api/ bundle-import server/gateway, domain handlers,

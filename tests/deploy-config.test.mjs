@@ -23,7 +23,6 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const packageJson = JSON.parse(readFileSync(resolve(__dirname, '../package.json'), 'utf-8'));
 const vercelConfig = JSON.parse(readFileSync(resolve(__dirname, '../vercel.json'), 'utf-8'));
 const viteConfigSource = readFileSync(resolve(__dirname, '../vite.config.ts'), 'utf-8');
-const proViteConfigSource = readFileSync(resolve(__dirname, '../pro-test/vite.config.ts'), 'utf-8');
 const sitemapSource = readFileSync(resolve(__dirname, '../public/sitemap.xml'), 'utf-8');
 const robotsSource = readFileSync(resolve(__dirname, '../public/robots.txt'), 'utf-8');
 const mainSource = readFileSync(resolve(__dirname, '../src/main.ts'), 'utf-8');
@@ -55,7 +54,6 @@ const GLOBAL_CSP_EXTERNAL_SCRIPT_HTML_FILES = [
   'public/pro/index.html',
   'public/pro/welcome.html',
 ];
-const STATIC_SCRIPT_NONCE = 'wm-static-bootstrap';
 
 const getCacheHeaderValue = (sourcePath) => {
   const rule = vercelConfig.headers.find((entry) => entry.source === sourcePath);
@@ -132,13 +130,10 @@ const getCspDirectiveTokens = (csp, directive) => {
   return [...new Set(tokens)].sort();
 };
 
-const hasTrustedStaticNonce = (attributes) => (
-  new RegExp(`\\bnonce=["']${STATIC_SCRIPT_NONCE}["']`).test(attributes)
-);
-
+// Every inline script needs a hash now — there is no nonce escape hatch, so
+// there is nothing to filter out.
 const getInlineScriptHashTokens = (htmlSource) => {
   return [...htmlSource.matchAll(/<script\b(?![^>]*\bsrc=)([^>]*)>([\s\S]*?)<\/script>/gi)]
-    .filter((match) => !hasTrustedStaticNonce(match[1]))
     .map((match) => match[2])
     .filter((body) => body.trim().length > 0)
     .map((body) => `'sha256-${createHash('sha256').update(body).digest('base64')}'`);
@@ -1078,25 +1073,37 @@ describe('security header guardrails', () => {
     );
   });
 
-  it('CSP script-src uses strict-dynamic with nonce/hash trust, not script host allowlists', () => {
+  it('CSP script-src uses self + hashes + an explicit host allowlist, never a build-time nonce', () => {
     const csp = getHeaderValue('Content-Security-Policy');
     const tokens = getCspDirectiveTokens(csp, 'script-src');
-    assert.ok(
-      tokens.includes("'strict-dynamic'"),
-      'CSP script-src must include strict-dynamic so trusted bootstrap scripts can load secondary scripts'
+
+    // A nonce baked into the build is published verbatim in every response,
+    // so an attacker can read it and stamp it on an injected script. Combined
+    // with strict-dynamic — which makes host allowlists inert and leaves the
+    // nonce as the only script gate — that reduced script-src to decoration.
+    // Real per-request nonces would be fine; a constant one is not a nonce.
+    assert.deepEqual(
+      tokens.filter((token) => token.startsWith("'nonce-")),
+      [],
+      'CSP script-src must not contain a build-time constant nonce'
     );
     assert.ok(
-      tokens.includes(`'nonce-${STATIC_SCRIPT_NONCE}'`),
-      'CSP script-src must include the static entry-script nonce used by parser-inserted HTML entries'
+      !tokens.includes("'strict-dynamic'"),
+      'CSP script-src must not use strict-dynamic without a per-request nonce'
     );
+    assert.ok(tokens.includes("'self'"), 'CSP script-src must include self for first-party bundles');
     assert.ok(
       tokens.some((token) => token.startsWith("'sha256-")),
       'CSP script-src must include hashes for inline bootstrap scripts'
     );
+
+    // Without strict-dynamic, every cross-origin script host must be named.
+    // Keep that list closed so a new third-party script cannot be added
+    // without this assertion being updated deliberately.
     assert.deepEqual(
-      tokens.filter((token) => /^https?:/.test(token) || token.includes('*.')),
-      [],
-      'CSP script-src must not rely on script host allowlists'
+      tokens.filter((token) => /^https?:/.test(token)).sort(),
+      ['https://*.clerk.accounts.dev', 'https://www.youtube.com'],
+      'CSP script-src host allowlist changed — confirm the new host is intended'
     );
   });
 
@@ -1164,23 +1171,18 @@ describe('security header guardrails', () => {
     }
   });
 
-  it('HTML entry script tags carry the nonce trusted by the header CSP', () => {
+  it('HTML entry scripts are first-party and carry no stale nonce attribute', () => {
     const indexHtml = readFileSync(resolve(__dirname, '../index.html'), 'utf-8');
-    const headerCsp = getHeaderValue('Content-Security-Policy');
     assert.equal(hasCspMeta(indexHtml), false, 'index.html must not ship a CSP meta tag');
-    assert.ok(
-      getCspDirectiveTokens(headerCsp, 'script-src').includes(`'nonce-${STATIC_SCRIPT_NONCE}'`),
-      'header script-src must trust the static entry-script nonce'
-    );
-    assert.match(
+
+    // Vite must not stamp a constant nonce onto emitted tags. A leftover
+    // nonce attribute is inert once the header drops its nonce-source, but it
+    // reads as a live control and invites someone to "fix" the CSP by adding
+    // the nonce back.
+    assert.doesNotMatch(
       viteConfigSource,
-      new RegExp(`cspNonce:\\s*STATIC_SCRIPT_NONCE`),
-      'Vite must stamp emitted HTML entry scripts with the nonce trusted by the header CSP'
-    );
-    assert.match(
-      proViteConfigSource,
-      new RegExp(`cspNonce:\\s*STATIC_SCRIPT_NONCE`),
-      'Pro Vite builds must stamp emitted HTML entry scripts with the nonce trusted by the header CSP'
+      /cspNonce:/,
+      'Vite must not stamp a build-time constant nonce onto emitted HTML'
     );
 
     for (const file of GLOBAL_CSP_EXTERNAL_SCRIPT_HTML_FILES) {
@@ -1188,11 +1190,16 @@ describe('security header guardrails', () => {
       assert.equal(hasCspMeta(html), false, `${file} must not ship a CSP meta tag`);
       const scriptTags = getExternalScriptTags(html);
       assert.ok(scriptTags.length > 0, `${file} must have at least one external entry script`);
-      const missingNonce = scriptTags.filter((tag) => !new RegExp(`\\bnonce=["']${STATIC_SCRIPT_NONCE}["']`).test(tag));
+
+      const stillNonced = scriptTags.filter((tag) => /\bnonce=/.test(tag));
+      assert.deepEqual(stillNonced, [], `${file} has entry scripts with a stale nonce attribute`);
+
+      // 'self' is what allows these now, so every entry must be same-origin.
+      const crossOrigin = scriptTags.filter((tag) => /\bsrc=["'](?:https?:)?\/\//.test(tag));
       assert.deepEqual(
-        missingNonce,
+        crossOrigin,
         [],
-        `${file} has parser-inserted external scripts without the CSP nonce`
+        `${file} has a cross-origin parser-inserted entry script; add its host to script-src deliberately`
       );
     }
   });

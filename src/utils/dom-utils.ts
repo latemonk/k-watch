@@ -105,14 +105,25 @@ export function safeHtml(html: string): DocumentFragment {
   const tpl = document.createElement('template');
   tpl.innerHTML = html;
   const walk = (parent: Element | DocumentFragment) => {
-    const children = Array.from(parent.childNodes);
-    for (const node of children) {
+    // Work queue, not a plain snapshot of childNodes. Unwrapping an unsafe
+    // element hoists its children into `parent`; those nodes are NOT in the
+    // original snapshot, so a snapshot-based loop never sanitizes them.
+    // `<form><img src=x onerror=…></form>` used to survive verbatim: the
+    // <form> was unwrapped and the <img> — never visited — kept its onerror.
+    // Re-queueing the hoisted nodes puts them back through this same loop,
+    // so they get unwrapped/attribute-stripped like any other child. This
+    // terminates: every unwrap strictly reduces the element count.
+    const queue = Array.from(parent.childNodes);
+    while (queue.length > 0) {
+      const node = queue.shift() as Node;
       if (node.nodeType === Node.ELEMENT_NODE) {
         const el = node as Element;
         if (!SAFE_TAGS.has(el.tagName.toLowerCase())) {
           // Unwrap: keep children, remove the element itself
+          const hoisted = Array.from(el.childNodes);
           while (el.firstChild) parent.insertBefore(el.firstChild, el);
           parent.removeChild(el);
+          queue.unshift(...hoisted);
           continue;
         }
         // Strip unsafe attributes
@@ -121,10 +132,13 @@ export function safeHtml(html: string): DocumentFragment {
             el.removeAttribute(attr.name);
           }
         }
-        // Sanitize href to prevent javascript: URIs
+        // Sanitize href to prevent javascript: URIs. Root-relative paths are
+        // allowed, but NOT protocol-relative `//host` — that is a cross-origin
+        // navigation wearing a same-origin costume.
         if (el.hasAttribute('href')) {
           const href = el.getAttribute('href') || '';
-          if (!/^https?:\/\//i.test(href) && !href.startsWith('/') && !href.startsWith('#')) {
+          const rootRelative = href.startsWith('/') && !href.startsWith('//');
+          if (!/^https?:\/\//i.test(href) && !rootRelative && !href.startsWith('#')) {
             el.removeAttribute('href');
           }
         }
