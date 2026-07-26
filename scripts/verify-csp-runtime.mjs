@@ -78,7 +78,11 @@ await page.addInitScript(() => {
 });
 page.on('console', (msg) => {
   const text = msg.text();
-  if (/Content Security Policy|Refused to (load|execute|apply)/i.test(text)) {
+  // Match only CSP refusals. A bare /Refused to (load|execute)/ also catches
+  // MIME-type refusals (nosniff on a 404 that fell through to the SPA shell),
+  // which have nothing to do with CSP — Chrome always names the policy in a
+  // real CSP message.
+  if (/Content Security Policy/i.test(text)) {
     violations.push({ directive: 'console', blocked: text.slice(0, 220), sample: '' });
   }
 });
