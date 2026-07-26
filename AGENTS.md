@@ -219,12 +219,58 @@ Heavy checks (`test:data`, typechecks, edge-bundle) must run **sequentially** in
 - **docs/plans/ is gitignored** — plan documents are local working state and do not travel between worktrees or ship in PRs.
 - **PR-review verification:** never assert a finding is fixed/stale from memory — re-fetch the PR head SHA and diff the cited lines first.
 
+## Repository layout
+
+**`latemonk/k-watch` is the only active repository.** It is public (AGPL-3.0);
+that is not incidental — AGPL §13 obliges us to give network users the source,
+and this repo is how we do it.
+
+There used to be a second, private repo (`latemonk/worldmonitor-kcg`, branch
+`kcg`) that shared git history with upstream `koala73/worldmonitor` and existed
+to absorb upstream merges. It was archived on 2026-07-26. Two reasons: its last
+upstream merge was 2026-03-04 (upstream had moved 96 commits on by then, so the
+"cheap 3-way merge" it existed for was no longer cheap), and maintaining the
+same product in two places meant every change had to be made twice. That failed
+in practice — a security pass landed in k-watch while the private repo kept the
+vulnerable code. At archive time the two trees were 98.5% byte-identical
+(4,375 of 4,442 shared files), k-watch was newer on every file that differed,
+and the only files unique to the private repo were upstream's internal
+planning docs, which the public release deliberately excludes.
+
+Upstream is wired as a **fetch-only** remote (push URL deliberately broken):
+
+```
+git remote add upstream https://github.com/koala73/worldmonitor.git
+git remote set-url --push upstream DISABLED_no_push_to_upstream
+```
+
+Histories are unrelated (k-watch was squashed into a fresh root commit at 1.0),
+so `git cherry-pick` from upstream will not work. To pull an upstream fix:
+
+```
+git fetch upstream
+git diff upstream/main~1 upstream/main -- <path> | git apply
+```
+
+Review before applying — upstream still carries the Pro paywall, the
+worldmonitor.app domains, and its own telemetry, all of which this fork removed.
+
 ## Deployment
 
-- **Web**: Vercel (auto-deploy on push to main)
-- **Relay/Seeds**: Railway (Docker, cron services)
+- **Web**: onpod, app name **`kcg-monitor`** (note: not "k-watch") → https://k-watch.onpod.ai
+  - Redeploy: `onpod app update kcg-monitor --build . --build-dockerfile Dockerfile.onpod --build-tag k-watch:<tag>`
+  - Roll back: `onpod app rollback kcg-monitor`
+  - Single pod: the swap happens only after the new image pulls, so a failed
+    build leaves production serving the old image.
+  - The builder stage of `Dockerfile.onpod` must keep install → build →
+    `rm -rf node_modules` in ONE `RUN`. node_modules is ~2 GB / 135k files and
+    the remote builder (kaniko) snapshots the whole filesystem after every RUN;
+    split it up and the build OOMs (`Killed`). Validate with a local
+    `docker build` before spending a remote build.
 - **Desktop**: Tauri builds via GitHub Actions
-- **Docs**: Mintlify (proxied through Vercel at `/docs`)
+- **Vercel / Railway / Mintlify**: upstream's deployment targets. `vercel.json`
+  and `middleware.ts` are still in the tree and kept consistent, but nothing in
+  this fork deploys there — the nginx image is what ships.
 
 ## Critical Conventions
 
