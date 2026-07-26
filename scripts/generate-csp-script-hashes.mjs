@@ -87,14 +87,21 @@ function collectHashes() {
 }
 
 /**
- * Replace the sha256 run inside each `script-src` directive. Only script-src
- * is touched — style-src and friends keep whatever they already declare.
- * A directive with no existing hashes gets them appended, so this still works
- * the first time it runs against a freshly written header.
+ * Keep an EXISTING sha256 run inside a `script-src` in sync. Directives that
+ * carry no hash today are left completely alone.
+ *
+ * That opt-in rule matters for correctness, not just tidiness. Several
+ * policies in vercel.json are `script-src 'unsafe-inline' …` for pages whose
+ * inline scripts are not enumerable (OAuth callbacks, the widget sandbox).
+ * Per CSP, adding any hash or nonce source makes 'unsafe-inline' be ignored —
+ * so blindly appending hashes to those directives would silently block the
+ * very scripts they exist to allow. Only style-agnostic, hash-based policies
+ * (currently just the dashboard CSP) opt in by already having a hash.
  */
 function rewriteScriptSrc(source, hashes) {
   const tokens = hashes.map(h => `'sha256-${h}'`).join(' ');
   return source.replace(/script-src ([^;"]*)/g, (whole, body) => {
+    if (!/'sha256-/.test(body)) return whole;
     const kept = body
       .split(/\s+/)
       .filter(token => token && !/^'sha256-/.test(token));

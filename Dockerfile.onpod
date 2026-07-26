@@ -14,20 +14,34 @@ FROM node:24-alpine AS builder
 
 WORKDIR /app
 
-COPY package.json package-lock.json ./
-RUN npm ci --ignore-scripts
-
 COPY . .
 
-RUN node docker/build-handlers.mjs
+# Install → build → delete node_modules, all in ONE layer.
+#
+# The builder's node_modules is ~2 GB across ~135k files. The remote builder
+# (kaniko) takes a full-filesystem snapshot after every RUN instruction, and
+# snapshotting a tree that size was OOM-killing the build ("Killed" right after
+# `npm ci`). Collapsing to a single RUN and removing node_modules before that
+# RUN ends means the only snapshot ever taken is of the build output.
+#
+# Safe because no later stage reads this stage's node_modules: the runtime
+# stage installs its own from docker/runtime-package.json, and the relay stage
+# from scripts/package.json. Everything copied out of `builder` below is source
+# or build output.
+#
 # KCG fork: crawlable corpus(원본 SEO 페이지 ~200장)·sitemap 코퍼스 생성 제외 —
 # 원본 브랜드 콘텐츠가 우리 도메인에 서빙되는 것 방지(탈브랜딩 07-21).
-RUN npx tsc && npx vite build
-# Recompute the CSP inline-script hashes from what vite actually emitted and
-# write them into docker/nginx*.conf. Must run after vite build and before the
-# final stage copies the conf — the conf is taken from THIS stage (not the
+#
+# generate-csp-script-hashes.mjs must run after `vite build`: it recomputes the
+# CSP inline-script hashes from what vite actually emitted and writes them into
+# docker/nginx*.conf. The final stage copies that conf from THIS stage (not the
 # build context) so the shipped header always matches the shipped HTML.
-RUN node scripts/generate-csp-script-hashes.mjs
+RUN npm ci --ignore-scripts \
+ && node docker/build-handlers.mjs \
+ && npx tsc \
+ && npx vite build \
+ && node scripts/generate-csp-script-hashes.mjs \
+ && rm -rf node_modules
 
 # ── Stage 2: Runtime dependencies (raw api/*.js handlers) ───────────────────
 FROM node:24-alpine AS runtime-deps
