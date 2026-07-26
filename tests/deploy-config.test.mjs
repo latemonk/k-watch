@@ -1100,9 +1100,18 @@ describe('security header guardrails', () => {
     // Without strict-dynamic, every cross-origin script host must be named.
     // Keep that list closed so a new third-party script cannot be added
     // without this assertion being updated deliberately.
+    // static.cloudflareinsights.com is injected by the Cloudflare proxy in
+    // front of the origin, not by our HTML — it never appears in dist/, so
+    // only a live check catches it. It used to ride the static nonce (CF reads
+    // the CSP header and stamps its injected tag); with the nonce gone it has
+    // to be named. Removing it silently kills Web Analytics.
     assert.deepEqual(
       tokens.filter((token) => /^https?:/.test(token)).sort(),
-      ['https://*.clerk.accounts.dev', 'https://www.youtube.com'],
+      [
+        'https://*.clerk.accounts.dev',
+        'https://static.cloudflareinsights.com',
+        'https://www.youtube.com',
+      ],
       'CSP script-src host allowlist changed — confirm the new host is intended'
     );
   });
