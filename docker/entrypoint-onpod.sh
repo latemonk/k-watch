@@ -36,6 +36,17 @@ export RELAY_AUTH_HEADER="${RELAY_AUTH_HEADER:-x-relay-key}"
 export LOCAL_API_MODE="${LOCAL_API_MODE:-docker}"
 export LOCAL_API_CLOUD_FALLBACK="${LOCAL_API_CLOUD_FALLBACK:-false}"
 
+# News digest budget. The defaults in list-feed-digest.ts are derived from
+# Vercel Edge's 25s initial-response ceiling, which does not exist here: nginx
+# fronts the API with proxy_read_timeout 120s. On this container's CPU a cold
+# ~100-feed build overruns the 14s default and gets force-rejected, so the
+# digest returned an empty payload on every cold miss and all news panels went
+# blank. These values leave the whole request comfortably inside nginx's 120s
+# (and the edge gateway's 95s) while giving a cold build room to finish; once
+# built, the 900s Redis cache serves everyone else.
+export NEWS_DIGEST_RESPONSE_TIMEOUT_MS="${NEWS_DIGEST_RESPONSE_TIMEOUT_MS:-55000}"
+export NEWS_DIGEST_DEADLINE_MS="${NEWS_DIGEST_DEADLINE_MS:-40000}"
+
 export LOCAL_API_PORT="${LOCAL_API_PORT:-46123}"
 if [ -z "${LOCAL_API_TOKEN:-}" ]; then
   LOCAL_API_TOKEN="$(node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))")"

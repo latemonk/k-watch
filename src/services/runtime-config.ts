@@ -110,7 +110,14 @@ const defaultToggles: Record<RuntimeFeatureId, boolean> = {
   aiOllama: true,
   wtoTrade: true,
   supplyChain: true,
-  newsPerFeedFallback: false,
+  // Default-on: when the digest is unavailable AND there are no stale
+  // headlines to reuse (first load, or a cold cache after restart), the
+  // disabled path renders an empty panel — "뉴스 없음" on a dashboard whose
+  // own /api/rss-proxy is happily serving those same feeds. A degraded but
+  // real subset beats a blank panel. The thundering herd this flag used to
+  // guard against is already bounded by perFeedFallbackCategoryFeedLimit (3),
+  // perFeedFallbackIntelFeedLimit (6) and perFeedFallbackBatchSize (2).
+  newsPerFeedFallback: true,
   aviationStack: true,
   icaoNotams: true,
 };
@@ -275,9 +282,9 @@ export const RUNTIME_FEATURES: RuntimeFeatureDefinition[] = [
   {
     id: 'newsPerFeedFallback',
     name: 'News per-feed fallback',
-    description: 'If digest aggregation is unavailable, use stale headlines first and optionally fetch a limited feed subset.',
+    description: 'If digest aggregation is unavailable, use stale headlines first, then fetch a limited feed subset directly via the RSS proxy.',
     requiredSecrets: [],
-    fallback: 'Stale headlines remain available; limited per-feed fallback is disabled.',
+    fallback: 'Turn off to keep stale headlines only; categories with no stale items then render empty.',
   },
   {
     id: 'aviationStack',

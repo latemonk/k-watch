@@ -50,11 +50,41 @@ const FEED_TIMEOUT_MS = 8_000;
 // Vercel Edge functions have a 25s initial-response ceiling. The digest
 // must fail closed to the warmed in-isolate fallback before the platform does.
 const VERCEL_INITIAL_RESPONSE_LIMIT_MS = 25_000;
-const DIGEST_RESPONSE_TIMEOUT_MS = 14_000;
 const POST_FETCH_HEADROOM_MS = 15_000;
 const RESPONSE_GUARD_BAND_MS = 3_000;
-const OVERALL_DEADLINE_MS = VERCEL_INITIAL_RESPONSE_LIMIT_MS - POST_FETCH_HEADROOM_MS;
 const BATCH_CONCURRENCY = 20;
+
+// The 25s ceiling above is a Vercel Edge platform limit, and the 14s/10s
+// budgets derived from it are only correct on Vercel. Self-hosted containers
+// (Docker/onpod: nginx proxy_read_timeout 120s) have no such ceiling, and on a
+// small-CPU host a cold ~100-feed build legitimately needs longer than 14s.
+// There the budget was not a safety net but the failure itself: buildDigest
+// got force-rejected at 14s on every cold miss, so listFeedDigest returned
+// `empty()` forever and every news panel rendered "뉴스 없음" — while the
+// per-feed RSS proxy was serving those exact same feeds fine.
+//
+// Defaults are unchanged (Vercel stays on the 25s-derived budget); self-hosted
+// deployments raise them via env. The collection deadline is always clamped to
+// leave RESPONSE_GUARD_BAND_MS of assembly room inside the response timeout —
+// an override that inverted that ordering would silently reintroduce the
+// always-empty digest it is meant to fix.
+function parseBudgetEnv(raw: string | undefined, defaultMs: number): number {
+  const parsed = Number.parseInt(raw ?? '', 10);
+  return parsed > 0 ? parsed : defaultMs;
+}
+const DIGEST_RESPONSE_TIMEOUT_MS = parseBudgetEnv(
+  process.env.NEWS_DIGEST_RESPONSE_TIMEOUT_MS,
+  14_000,
+);
+const OVERALL_DEADLINE_MS = Math.min(
+  parseBudgetEnv(
+    process.env.NEWS_DIGEST_DEADLINE_MS,
+    VERCEL_INITIAL_RESPONSE_LIMIT_MS - POST_FETCH_HEADROOM_MS,
+  ),
+  // Strictly less than the response timeout minus the guard band, so the
+  // assembly phase always has room left after collection stops.
+  DIGEST_RESPONSE_TIMEOUT_MS - RESPONSE_GUARD_BAND_MS - 1,
+);
 
 // U3 — hard freshness floor (default 96h, env override NEWS_MAX_AGE_HOURS).
 // Items older than this are dropped before scoring. The 24h `recencyScore`
