@@ -31,14 +31,17 @@ function readRepoJson(relativePath) {
 
 describe('security audit baseline', () => {
   it('allows currently baselined high advisories', () => {
+    // image-size JXL/HEIF DoS — baselined 2026-08-17 because no patched
+    // release exists (vulnerable "<= 2.0.2", latest IS 2.0.2).
     const report = auditReportWith({
-      name: '@clerk/clerk-js',
+      name: 'image-size',
       severity: 'high',
-      title: 'known clerk advisory',
-      url: 'https://github.com/advisories/GHSA-w24r-5266-9c3c',
+      title: 'known image-size advisory',
+      url: 'https://github.com/advisories/GHSA-5p2g-fcmc-qvqq',
     });
 
     assert.deepEqual(collectUnbaselinedFindings(report, 'pro-test/package-lock.json'), []);
+    assert.deepEqual(collectUnbaselinedFindings(report, 'package-lock.json'), []);
   });
 
   it('ignores moderate production advisories for the high-severity PR gate', () => {
@@ -113,16 +116,18 @@ describe('security audit baseline', () => {
 
   it('flags baseline entries that no longer match any current advisory', () => {
     const report = auditReportWith({
-      name: '@clerk/clerk-js',
+      name: 'image-size',
       severity: 'high',
-      title: 'known clerk advisory',
-      url: 'https://github.com/advisories/GHSA-w24r-5266-9c3c',
+      title: 'known image-size advisory',
+      url: 'https://github.com/advisories/GHSA-5p2g-fcmc-qvqq',
     });
 
-    // The still-present id is not reported as stale.
-    assert.deepEqual(collectStaleBaselineEntries(report, 'pro-test/package-lock.json'), ['GHSA-qjx8-664m-686j']);
-    // The empty root baseline has nothing to mark stale.
-    assert.deepEqual(collectStaleBaselineEntries(report, 'package-lock.json'), []);
+    // The still-present id is not reported as stale; its sibling entry
+    // (absent from this report) is — this is the signal that a patched
+    // image-size finally shipped and the baseline should be retired.
+    assert.deepEqual(collectStaleBaselineEntries(report, 'pro-test/package-lock.json'), ['GHSA-w3rx-r6r6-pgpr']);
+    // A lockfile with an empty baseline has nothing to mark stale.
+    assert.deepEqual(collectStaleBaselineEntries(report, 'scripts/package-lock.json'), []);
   });
 
   it('treats a symlinked entry path as direct invocation (no silent fail-open)', () => {

@@ -13,11 +13,19 @@ const SEVERITY_RANK = new Map([
   ['critical', 4],
 ]);
 
+// image-size GHSA-5p2g-fcmc-qvqq / GHSA-w3rx-r6r6-pgpr (JXL·HEIF·ICNS parser
+// DoS): every published release is vulnerable ("<= 2.0.2", latest IS 2.0.2,
+// first_patched_version = null as of 2026-08-17) — there is nothing to bump
+// to. Reaches these lockfiles only as a deep transitive of image-processing
+// tooling (root: deck.gl → texture-compressor; pro-test: build tooling), never
+// fed attacker-controlled image bytes at runtime here. Re-check for a patched
+// release when these entries go stale (the stale-baseline warning below will
+// fire once a fixed version ships and npm stops reporting the advisory).
 export const BASELINE_ADVISORIES_BY_LOCKFILE = {
-  'package-lock.json': [],
+  'package-lock.json': ['GHSA-5p2g-fcmc-qvqq', 'GHSA-w3rx-r6r6-pgpr'],
   'consumer-prices-core/package-lock.json': [],
   'blog-site/package-lock.json': [],
-  'pro-test/package-lock.json': ['GHSA-qjx8-664m-686j', 'GHSA-w24r-5266-9c3c'],
+  'pro-test/package-lock.json': ['GHSA-5p2g-fcmc-qvqq', 'GHSA-w3rx-r6r6-pgpr'],
   'scripts/package-lock.json': [],
   'docker/runtime-package-lock.json': [],
 };
