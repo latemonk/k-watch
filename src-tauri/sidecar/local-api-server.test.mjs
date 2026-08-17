@@ -2080,3 +2080,76 @@ test('service-status reports bound fallback port after EADDRINUSE recovery', asy
     });
   }
 });
+
+// ─── Handler timeout (08-17 wedge incident) ────────────────────────────────
+// A wedged process left every dispatched handler pending forever with no log
+// trail. The dispatch layer now races handlers against
+// LOCAL_API_HANDLER_TIMEOUT_MS (default: 110s in docker mode, disabled
+// elsewhere) and answers 504 with the route name.
+
+test('returns 504 when a dispatched handler exceeds LOCAL_API_HANDLER_TIMEOUT_MS', async () => {
+  process.env.LOCAL_API_HANDLER_TIMEOUT_MS = '300';
+  const localApi = await setupApiDir({
+    'wedged.js': `
+      export default function handler() {
+        return new Promise(() => {}); // never settles — simulates the wedge
+      }
+    `,
+  });
+  const errors = [];
+  const app = await createLocalApiServer({
+    port: 0,
+    apiDir: localApi.apiDir,
+    logger: { log() { }, warn() { }, error(msg) { errors.push(String(msg)); } },
+  });
+  const { port } = await app.start();
+
+  try {
+    const startedAt = Date.now();
+    const response = await authFetch(`http://127.0.0.1:${port}/api/wedged`);
+    assert.equal(response.status, 504);
+    const body = await response.json();
+    assert.equal(body.error, 'Handler timeout');
+    assert.equal(body.endpoint, '/api/wedged');
+    // Must answer at the configured bound, not hang until the client gives up.
+    assert.ok(Date.now() - startedAt < 5000);
+    // The wedged route must be named in the log — that trail was the missing
+    // diagnostic in the incident.
+    assert.ok(errors.some((msg) => msg.includes('/api/wedged') && msg.includes('handler timeout')));
+  } finally {
+    delete process.env.LOCAL_API_HANDLER_TIMEOUT_MS;
+    await app.close();
+    await localApi.cleanup();
+  }
+});
+
+test('fast handlers are unaffected by the handler timeout', async () => {
+  process.env.LOCAL_API_HANDLER_TIMEOUT_MS = '300';
+  const localApi = await setupApiDir({
+    'quick.js': `
+      export default async function handler() {
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' }
+        });
+      }
+    `,
+  });
+  const app = await createLocalApiServer({
+    port: 0,
+    apiDir: localApi.apiDir,
+    logger: { log() { }, warn() { }, error() { } },
+  });
+  const { port } = await app.start();
+
+  try {
+    const response = await authFetch(`http://127.0.0.1:${port}/api/quick`);
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.ok, true);
+  } finally {
+    delete process.env.LOCAL_API_HANDLER_TIMEOUT_MS;
+    await app.close();
+    await localApi.cleanup();
+  }
+});

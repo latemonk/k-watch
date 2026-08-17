@@ -722,6 +722,12 @@ let upstreamPaused = false;
 let upstreamQueue = [];
 let upstreamQueueReadIndex = 0;
 let upstreamDrainScheduled = false;
+// ⚠08-17 실사고: aisstream 이 순단(silent-stall)하면 소켓은 OPEN 으로 남아
+// 'close' 가 영영 안 오고 재접속 경로가 막힌다 — msgs 카운터가 55.7만에서
+// 얼어붙은 채 15일 된 프로세스가 vessels=0 으로 방치됐다. 마지막 수신
+// 시각을 소켓 수신 이벤트에서 직접 찍고, 워치독이 OPEN+무수신을 강제
+// terminate 해 기존 close→reconnect 경로에 태운다.
+let lastUpstreamMessageAt = 0;
 const clients = new Set();
 let messageCount = 0;
 let droppedMessages = 0;
@@ -12073,6 +12079,9 @@ function connectUpstream() {
       return;
     }
     console.log('[Relay] Connected to aisstream.io');
+    // 접속 직후부터 스톨 시계를 돌린다 — 구독 요청이 무시돼 한 건도 안
+    // 오는 연결(키 소진·서버측 무응답)도 같은 워치독이 회수하게.
+    lastUpstreamMessageAt = Date.now();
     socket.send(JSON.stringify({
       APIKey: API_KEY,
       // KCG fork: 한반도 근해만 구독 — 전 세계 구독은 초당 ~300메시지를
@@ -12091,6 +12100,9 @@ function connectUpstream() {
   socket.on('message', (data) => {
     if (upstreamSocket !== socket) return;
 
+    // 수신 사실 자체를 찍는다(처리 성공 여부와 무관) — 스톨 판정은
+    // 「업스트림이 보내고 있는가」만 봐야 하므로 드롭되는 메시지도 포함.
+    lastUpstreamMessageAt = Date.now();
     const raw = data instanceof Buffer ? data : Buffer.from(data);
     if (getUpstreamQueueSize() >= UPSTREAM_QUEUE_HARD_CAP) {
       droppedMessages++;
@@ -12208,6 +12220,31 @@ setInterval(() => {
     worldbankCache.clear();
     yahooChartCache.clear();
     if (global.gc) global.gc();
+  }
+}, 60 * 1000).unref?.();
+
+// aisstream 순단 워치독 — 08-17 실사고 재발 방지.
+// aisstream 은 데이터만 조용히 끊고 TCP/WS 는 OPEN 으로 유지하는 일이
+// 실측으로 확인됐다(07-22 503 순단, 08-17 15일 스톨). 'close' 이벤트 기반
+// 재접속만으로는 영영 복구가 안 되므로, OPEN 소켓이 일정 시간 무수신이면
+// terminate() 로 close 를 강제 발화시켜 기존 5초 재접속 경로에 태운다.
+// 한반도 bbox 구독은 평시 분당 수십 건이 들어오므로(15일 평균 25건/분)
+// 10분 무수신은 트래픽 저점이 아니라 순단이다. 필요시 env 로 조정.
+const AIS_STALL_RECONNECT_MS = (() => {
+  const parsed = Number.parseInt(process.env.AIS_STALL_RECONNECT_MS ?? '', 10);
+  return parsed > 0 ? parsed : 10 * 60 * 1000;
+})();
+setInterval(() => {
+  if (!upstreamSocket || upstreamSocket.readyState !== WebSocket.OPEN) return;
+  if (!lastUpstreamMessageAt) return;
+  const silentMs = Date.now() - lastUpstreamMessageAt;
+  if (silentMs < AIS_STALL_RECONNECT_MS) return;
+  console.warn(`[Relay] aisstream silent-stall: socket OPEN but no messages for ${Math.round(silentMs / 1000)}s (threshold ${Math.round(AIS_STALL_RECONNECT_MS / 1000)}s) — forcing reconnect`);
+  // terminate 는 close 이벤트를 동기 발화 → 기존 핸들러가 upstreamSocket 을
+  // 비우고 5초 뒤 connectUpstream 을 예약한다. 재접속 성공 시 'open' 이
+  // lastUpstreamMessageAt 을 다시 찍으므로 연쇄 terminate 는 없다.
+  try { upstreamSocket.terminate(); } catch (e) {
+    console.error('[Relay] silent-stall terminate failed:', e?.message || e);
   }
 }, 60 * 1000).unref?.();
 

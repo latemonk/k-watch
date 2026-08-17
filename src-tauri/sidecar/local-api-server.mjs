@@ -703,6 +703,45 @@ function logOnce(logger, route, message) {
   }
 }
 
+// ⚠08-17 실사고(kcg-monitor): 프로세스 내부 상태 오염으로 모든 핸들러
+// 실행이 영영 안 끝나는 웨지가 발생했다. 요청은 nginx 499 로만 쌓이고
+// 어느 라우트가 막혔는지 로그가 전혀 없어 진단이 오래 걸렸다. 핸들러
+// 실행에 상한을 걸어 (1) 클라이언트가 무한 대기 대신 504 를 받고
+// (2) 막힌 라우트가 로그에 남게 한다. 상한은 취소가 아니라 응답 대체 —
+// 버려진 핸들러 프라미스는 계속 돌 수 있다(server/_shared/redis.ts 의
+// withFetcherTimeout 과 같은 한계).
+//
+// 기본값은 docker 모드에서만 110초: nginx proxy_read_timeout 120초 안쪽
+// 이어야 504 가 클라이언트에 실제로 전달된다(뉴스 다이제스트 콜드 빌드
+// 55초 예산의 2배 여유). desktop 사이드카는 nginx 상한이 없고 LLM 장기
+// 호출이 있어 기본 비활성. LOCAL_API_HANDLER_TIMEOUT_MS 로 어느 모드든
+// 강제 설정(0 이하 = 비활성).
+function resolveHandlerTimeoutMs(mode) {
+  const raw = process.env.LOCAL_API_HANDLER_TIMEOUT_MS;
+  if (raw !== undefined && raw !== '') {
+    const parsed = Number.parseInt(raw, 10);
+    if (Number.isFinite(parsed)) return parsed > 0 ? parsed : 0;
+  }
+  return mode === 'docker' ? 110_000 : 0;
+}
+
+function raceHandlerTimeout(handlerPromise, pathname, timeoutMs, logger) {
+  let timer;
+  const timeout = new Promise((resolve) => {
+    timer = setTimeout(() => {
+      // logOnce 가 아니라 매번 기록: 웨지 상태에선 「어떤 라우트가 언제부터
+      // 몇 번」이 유일한 진단 단서다.
+      logger.error(
+        `[local-api] handler timeout: ${pathname} exceeded ${timeoutMs}ms — returning 504. ` +
+        'Repeated timeouts across routes indicate a wedged process (see api-watchdog).',
+      );
+      resolve(json({ error: 'Handler timeout', endpoint: pathname, timeoutMs }, 504));
+    }, timeoutMs);
+    timer.unref?.();
+  });
+  return Promise.race([handlerPromise, timeout]).finally(() => clearTimeout(timer));
+}
+
 async function importHandler(modulePath) {
   if (failedImports.has(modulePath)) {
     throw new Error(`cached-failure:${path.basename(modulePath)}`);
@@ -1702,7 +1741,10 @@ async function dispatch(requestUrl, req, routes, context) {
       body,
     });
 
-    const response = await mod.default(request);
+    const handlerTimeoutMs = resolveHandlerTimeoutMs(context.mode);
+    const response = handlerTimeoutMs > 0
+      ? await raceHandlerTimeout(mod.default(request), requestUrl.pathname, handlerTimeoutMs, context.logger)
+      : await mod.default(request);
     if (!(response instanceof Response)) {
       logOnce(context.logger, requestUrl.pathname, 'handler returned non-Response');
       if (context.cloudFallback) {
