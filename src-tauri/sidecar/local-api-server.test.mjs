@@ -2153,3 +2153,34 @@ test('fast handlers are unaffected by the handler timeout', async () => {
     await localApi.cleanup();
   }
 });
+
+test('late handler rejection after timeout does not crash the process', async () => {
+  process.env.LOCAL_API_HANDLER_TIMEOUT_MS = '200';
+  const localApi = await setupApiDir({
+    'late-reject.js': `
+      export default function handler() {
+        return new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('late failure after timeout')), 500);
+        });
+      }
+    `,
+  });
+  const app = await createLocalApiServer({
+    port: 0,
+    apiDir: localApi.apiDir,
+    logger: { log() { }, warn() { }, error() { } },
+  });
+  const { port } = await app.start();
+
+  try {
+    const response = await authFetch(`http://127.0.0.1:${port}/api/late-reject`);
+    assert.equal(response.status, 504);
+    // Wait past the late rejection; an unhandled rejection here would fail
+    // the test run (node:test treats it as an uncaught error).
+    await new Promise((resolve) => setTimeout(resolve, 600));
+  } finally {
+    delete process.env.LOCAL_API_HANDLER_TIMEOUT_MS;
+    await app.close();
+    await localApi.cleanup();
+  }
+});

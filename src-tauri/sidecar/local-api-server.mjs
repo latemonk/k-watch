@@ -726,6 +726,11 @@ function resolveHandlerTimeoutMs(mode) {
 }
 
 function raceHandlerTimeout(handlerPromise, pathname, timeoutMs, logger) {
+  // 타임아웃이 레이스를 이긴 뒤 버려진 핸들러 프라미스가 나중에 reject 하면
+  // unhandledRejection 으로 프로세스가 통째로 죽는다(Node 15+ 기본 throw).
+  // 별도 브랜치로 소비만 해 두면 레이스 자체의 reject 전파(아래 race →
+  // dispatch 의 try/catch)에는 영향이 없다.
+  handlerPromise.catch(() => {});
   let timer;
   const timeout = new Promise((resolve) => {
     timer = setTimeout(() => {
