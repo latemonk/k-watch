@@ -26,11 +26,12 @@ import { maybeServeBootstrapFromKv } from './kv-serve.js';
 // origins that the function would accept get the canonical fallback origin
 // echoed back and fail CORS at the browser.
 const ALLOWED_ORIGIN_PATTERNS = [
-  /^https:\/\/(.*\.)?worldmonitor\.app$/,
-  // Vercel previews under the "eliewm" team scope, e.g.
-  //   worldmonitor-git-<branch>-eliewm.vercel.app / worldmonitor-<hash>-eliewm.vercel.app
-  // Mirror of api/_cors.js + server/cors.ts (see superset note above).
-  /^https:\/\/worldmonitor-[a-z0-9-]+-eliewm\.vercel\.app$/,
+  // K-Watch's own origin. Paired with Access-Control-Allow-Credentials: true,
+  // so every entry is a standing credentialed cross-origin grant. The upstream
+  // worldmonitor.app hosts (and upstream's Vercel preview scope) were removed
+  // to mirror api/_cors.js + server/cors.ts (45008d7) — this fork does not
+  // control those domains. Exactly one host: no wildcard.
+  /^https:\/\/k-watch\.onpod\.ai$/,
   /^https?:\/\/tauri\.localhost(:\d+)?$/,
   /^https?:\/\/[a-z0-9-]+\.tauri\.localhost(:\d+)?$/i,
   /^tauri:\/\/localhost$/,
@@ -97,7 +98,7 @@ export function isAllowedOrigin(origin) {
 export { hasPublicCorsPolicy };
 
 export function buildCorsHeaders(origin) {
-  const allowOrigin = isAllowedOrigin(origin) ? origin : 'https://worldmonitor.app';
+  const allowOrigin = isAllowedOrigin(origin) ? origin : 'https://k-watch.onpod.ai';
   return {
     'Access-Control-Allow-Origin': allowOrigin,
     // Required because the app fetch interceptor sends credentials: 'include'

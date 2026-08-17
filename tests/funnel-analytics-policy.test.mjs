@@ -6,10 +6,11 @@
  * notice — each one going missing blinds a segment of the funnel without
  * breaking any runtime behavior.
  *
- *  1. UMAMI_DOMAINS must list www.worldmonitor.app — the apex 301s to www in
- *     production and the Umami tracker's data-domains check is an EXACT
- *     hostname match; dropping www silently disables ALL dashboard analytics
- *     on the canonical host (the pre-#4931 state).
+ *  1. The dashboard Umami config must stay OPT-IN via VITE_UMAMI_* (45008d7):
+ *     the fork previously shipped the upstream project's analytics endpoint
+ *     hardcoded, pushing self-hosted page views to infrastructure the
+ *     operator does not control. No UMAMI_* constant may regain a hardcoded
+ *     default, and the loader must stay disabled while unconfigured.
  *  2. The typed event catalog must contain the funnel events.
  *  3. startCheckout (dashboard) fires checkout-start; the checkout-return
  *     reconciliation fires checkout-success / checkout-failed.
@@ -24,15 +25,25 @@ import { readFileSync } from 'node:fs';
 
 const read = (rel) => readFileSync(new URL(`../${rel}`, import.meta.url), 'utf8');
 
-test('UMAMI_DOMAINS covers the canonical www host', () => {
+test('Umami config is opt-in env, never a hardcoded upstream endpoint (45008d7)', () => {
   const src = read('src/services/analytics.ts');
-  const m = src.match(/const UMAMI_DOMAINS = '([^']+)'/);
-  assert.ok(m, 'UMAMI_DOMAINS constant not found');
-  const domains = m[1].split(',');
-  assert.ok(domains.includes('www.worldmonitor.app'),
-    'www.worldmonitor.app missing from UMAMI_DOMAINS — analytics dead on the canonical host');
-  assert.ok(domains.includes('worldmonitor.app'),
-    'apex worldmonitor.app missing from UMAMI_DOMAINS');
+  assert.match(src, /import\.meta\.env\.VITE_UMAMI_SCRIPT_SRC \?\? ''/,
+    'UMAMI_SCRIPT_SRC must come from the VITE_UMAMI_SCRIPT_SRC opt-in with an empty fallback');
+  assert.match(src, /import\.meta\.env\.VITE_UMAMI_WEBSITE_ID \?\? ''/,
+    'UMAMI_WEBSITE_ID must come from the VITE_UMAMI_WEBSITE_ID opt-in with an empty fallback');
+  assert.match(src, /import\.meta\.env\.VITE_UMAMI_DOMAINS \?\? ''/,
+    'UMAMI_DOMAINS must come from the VITE_UMAMI_DOMAINS opt-in with an empty fallback');
+  // No hardcoded string default may sneak back onto any of the three —
+  // a fallback value would re-point self-hosted telemetry at someone
+  // else's server the moment the env vars are unset.
+  assert.doesNotMatch(src, /const UMAMI_(?:SCRIPT_SRC|WEBSITE_ID|DOMAINS) = '/,
+    'a UMAMI_* constant regained a hardcoded string default');
+  assert.doesNotMatch(src, /VITE_UMAMI_\w+ \?\? '[^']/,
+    'a VITE_UMAMI_* read regained a non-empty fallback value');
+  // Unconfigured = telemetry off: the loader must bail before injecting
+  // the script tag (queued track() calls stay in the bounded queue).
+  assert.ok(src.includes('if (!UMAMI_SCRIPT_SRC || !UMAMI_WEBSITE_ID) return;'),
+    'loadUmamiScript no longer short-circuits when the opt-in is unconfigured');
 });
 
 test('funnel events exist in the typed catalog', () => {

@@ -6,6 +6,16 @@ import { fileURLToPath } from 'node:url';
 
 import { dashboardFontFamilies } from '../src/bootstrap/secondary-startup.ts';
 import { scheduleAfterFirstPaint } from '../src/utils/after-paint.ts';
+// Umami is opt-in since 45008d7 (VITE_UMAMI_*, unset = telemetry off). The
+// helper bundles the real analytics module with the opt-in CONFIGURED so the
+// deferred-loader behavior below stays covered; the values are a self-hosted
+// operator's own instance, never the upstream project's endpoint.
+import {
+  loadAnalyticsModule,
+  TEST_UMAMI_DOMAINS,
+  TEST_UMAMI_SCRIPT_SRC,
+  TEST_UMAMI_WEBSITE_ID,
+} from './helpers/analytics-module.mts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, '..');
@@ -52,12 +62,22 @@ describe('secondary dashboard startup', () => {
     );
   });
 
-  it('keeps secondary startup script hosts out of the dashboard script-src allowlist', () => {
+  it('keeps retired telemetry hosts and the static-nonce CSP out of the dashboard script-src allowlist', () => {
     const scriptSrc = dashboardCsp.match(/script-src\s+([^;]+)/)?.[1] ?? '';
-    assert.match(scriptSrc, /'strict-dynamic'/);
+    // 45008d7 replaced the 'strict-dynamic' + build-time-constant nonce combo
+    // (which gated nothing) with 'self' + explicit hosts + generated hashes.
+    // Neither half of the removed combo may come back.
+    assert.match(scriptSrc, /'self'/);
+    assert.doesNotMatch(scriptSrc, /'strict-dynamic'/);
+    assert.doesNotMatch(dashboardCsp, /'nonce-/);
+    // Upstream Umami endpoint (telemetry is opt-in, off by default) and
+    // DebugBear RUM must stay out of the allowlist.
     assert.doesNotMatch(scriptSrc, /https:\/\/abacus\.worldmonitor\.app/);
     assert.doesNotMatch(scriptSrc, /https:\/\/cdn\.debugbear\.com/);
-    assert.doesNotMatch(scriptSrc, /https:\/\/static\.cloudflareinsights\.com/);
+    // The Cloudflare Web Analytics beacon is injected by the domain-fronting
+    // CF proxy, not our HTML — without strict-dynamic it must be an explicit
+    // host or live pages break (5ec728b).
+    assert.match(scriptSrc, /https:\/\/static\.cloudflareinsights\.com/);
     assert.doesNotMatch(dashboardCsp, /style-src[^;]*https:\/\/fonts\.googleapis\.com/);
     assert.match(dashboardCsp, /font-src[^;]*'self'/);
     assert.doesNotMatch(dashboardCsp, /font-src[^;]*https:/);
@@ -156,7 +176,8 @@ describe('deferred Umami loader', () => {
     });
 
     try {
-      const analytics = await import('../src/services/analytics.ts');
+      const analytics = await loadAnalyticsModule();
+      analytics.resetAnalyticsForTesting();
       analytics.track('search-open', { source: 'desktop' });
       analytics.identifyUser('user_1', 'free', null, null);
       await analytics.initAnalytics();
@@ -164,12 +185,12 @@ describe('deferred Umami loader', () => {
       assert.equal(appendedScripts.length, 1);
       const firstScript = appendedScripts[0]!;
       assert.equal(firstScript.async, true);
-      assert.equal(firstScript.src, 'https://abacus.worldmonitor.app/script.js');
-      assert.equal(firstScript.dataset.websiteId, 'e8800335-c853-46a8-8497-c993ed2f58bc');
-      // www MUST stay listed (#4931): the apex 301s to www in production and
-      // the tracker's data-domains check is an exact hostname match — without
-      // www, analytics on the canonical host are silently disabled.
-      assert.equal(firstScript.dataset.domains, 'worldmonitor.app,www.worldmonitor.app,happy.worldmonitor.app');
+      assert.equal(firstScript.src, TEST_UMAMI_SCRIPT_SRC);
+      assert.equal(firstScript.dataset.websiteId, TEST_UMAMI_WEBSITE_ID);
+      // The operator's list must pass through VERBATIM (#4931 lesson): the
+      // tracker's data-domains check is an exact hostname match, so dropping
+      // or rewriting a listed host silently disables analytics on it.
+      assert.equal(firstScript.dataset.domains, TEST_UMAMI_DOMAINS);
       assert.deepEqual(calls, []);
       firstScript.listeners.get('error')?.();
       assert.equal(firstScript.removed, true);
@@ -377,7 +398,7 @@ describe('scheduleAfterFirstPaint', () => {
 
 describe('deferred Umami loader — failure and edge paths', () => {
   it('stops after the attempt limit and appends no third script on exhaustion', async () => {
-    const analytics = await import('../src/services/analytics.ts');
+    const analytics = await loadAnalyticsModule();
     analytics.resetAnalyticsForTesting();
     const h = installUmamiHarness();
     try {
@@ -394,7 +415,7 @@ describe('deferred Umami loader — failure and edge paths', () => {
   });
 
   it('caps the pre-load queue at 50 and evicts the oldest call', async () => {
-    const analytics = await import('../src/services/analytics.ts');
+    const analytics = await loadAnalyticsModule();
     analytics.resetAnalyticsForTesting();
     const h = installUmamiHarness();
     const delivered: Array<Record<string, unknown> | undefined> = [];
@@ -415,7 +436,7 @@ describe('deferred Umami loader — failure and edge paths', () => {
   });
 
   it('queues a call when window.umami.track throws, then delivers it on flush', async () => {
-    const analytics = await import('../src/services/analytics.ts');
+    const analytics = await loadAnalyticsModule();
     analytics.resetAnalyticsForTesting();
     const h = installUmamiHarness();
     const delivered: string[] = [];
@@ -442,7 +463,7 @@ describe('deferred Umami loader — failure and edge paths', () => {
   });
 
   it('attaches to an existing umami script without injecting a duplicate', async () => {
-    const analytics = await import('../src/services/analytics.ts');
+    const analytics = await loadAnalyticsModule();
     analytics.resetAnalyticsForTesting();
     const existing = makeFakeScript();
     const h = installUmamiHarness({ existingScript: existing });

@@ -48,10 +48,10 @@ describe('widget-agent unified tester key auth', () => {
   });
 
   it('accepts X-WorldMonitor-Key and upgrades relay request to pro', async () => {
-    const res = await handler(new Request('https://www.worldmonitor.app/api/widget-agent', {
+    const res = await handler(new Request('https://k-watch.onpod.ai/api/widget-agent', {
       method: 'POST',
       headers: {
-        Origin: 'https://www.worldmonitor.app',
+        Origin: 'https://k-watch.onpod.ai',
         'Content-Type': 'application/json',
         'X-WorldMonitor-Key': 'browser-test-key',
       },
@@ -78,10 +78,10 @@ describe('widget-agent unified tester key auth', () => {
   });
 
   it('falls back to legacy tester keys when X-WorldMonitor-Key is invalid', async () => {
-    const res = await handler(new Request('https://www.worldmonitor.app/api/widget-agent', {
+    const res = await handler(new Request('https://k-watch.onpod.ai/api/widget-agent', {
       method: 'POST',
       headers: {
-        Origin: 'https://www.worldmonitor.app',
+        Origin: 'https://k-watch.onpod.ai',
         'Content-Type': 'application/json',
         'X-WorldMonitor-Key': 'wrong-key',
         'X-Pro-Key': 'server-pro-key',
@@ -106,10 +106,10 @@ describe('widget-agent unified tester key auth', () => {
   });
 
   it('accepts HttpOnly legacy tester key cookies without JS-readable auth headers', async () => {
-    const res = await handler(new Request('https://www.worldmonitor.app/api/widget-agent', {
+    const res = await handler(new Request('https://k-watch.onpod.ai/api/widget-agent', {
       method: 'POST',
       headers: {
-        Origin: 'https://www.worldmonitor.app',
+        Origin: 'https://k-watch.onpod.ai',
         'Content-Type': 'application/json',
         Cookie: `wm-widget-key=${encodeURIComponent('server-widget-key')}; wm-pro-key=${encodeURIComponent('server-pro-key')}`,
       },
@@ -132,7 +132,7 @@ describe('widget-agent unified tester key auth', () => {
   });
 
   it('rejects disallowed origins before cookie-backed auth reaches the relay', async () => {
-    const res = await handler(new Request('https://www.worldmonitor.app/api/widget-agent', {
+    const res = await handler(new Request('https://k-watch.onpod.ai/api/widget-agent', {
       method: 'POST',
       headers: {
         Origin: 'https://evil.example.com',
@@ -150,10 +150,10 @@ describe('widget-agent unified tester key auth', () => {
   });
 
   it('rejects invalid X-WorldMonitor-Key before relay fetch', async () => {
-    const res = await handler(new Request('https://www.worldmonitor.app/api/widget-agent', {
+    const res = await handler(new Request('https://k-watch.onpod.ai/api/widget-agent', {
       method: 'POST',
       headers: {
-        Origin: 'https://www.worldmonitor.app',
+        Origin: 'https://k-watch.onpod.ai',
         'Content-Type': 'application/json',
         'X-WorldMonitor-Key': 'wrong-key',
       },
@@ -168,10 +168,10 @@ describe('widget-agent unified tester key auth', () => {
   });
 
   it('rejects prefix and length mismatches for browser and legacy tester keys', async () => {
-    const browserPrefix = await handler(new Request('https://www.worldmonitor.app/api/widget-agent', {
+    const browserPrefix = await handler(new Request('https://k-watch.onpod.ai/api/widget-agent', {
       method: 'POST',
       headers: {
-        Origin: 'https://www.worldmonitor.app',
+        Origin: 'https://k-watch.onpod.ai',
         'Content-Type': 'application/json',
         'X-WorldMonitor-Key': 'browser-test',
       },
@@ -179,10 +179,10 @@ describe('widget-agent unified tester key auth', () => {
     }));
     assert.equal(browserPrefix.status, 403);
 
-    const proLonger = await handler(new Request('https://www.worldmonitor.app/api/widget-agent', {
+    const proLonger = await handler(new Request('https://k-watch.onpod.ai/api/widget-agent', {
       method: 'POST',
       headers: {
-        Origin: 'https://www.worldmonitor.app',
+        Origin: 'https://k-watch.onpod.ai',
         'Content-Type': 'application/json',
         'X-Pro-Key': 'server-pro-key-extra',
       },
@@ -190,10 +190,10 @@ describe('widget-agent unified tester key auth', () => {
     }));
     assert.equal(proLonger.status, 403);
 
-    const widgetLonger = await handler(new Request('https://www.worldmonitor.app/api/widget-agent', {
+    const widgetLonger = await handler(new Request('https://k-watch.onpod.ai/api/widget-agent', {
       method: 'POST',
       headers: {
-        Origin: 'https://www.worldmonitor.app',
+        Origin: 'https://k-watch.onpod.ai',
         'Content-Type': 'application/json',
         'X-Widget-Key': 'server-widget-key-extra',
       },

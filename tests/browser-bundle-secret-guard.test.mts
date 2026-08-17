@@ -113,6 +113,12 @@ const CLIENT_ENV_ALLOWLIST = new Set([
   'VITE_TAURI_API_BASE_URL',
   'VITE_TAURI_REMOTE_API_BASE_URL',
   'VITE_TELEGRAM_BOT_USERNAME',
+  // Umami opt-in analytics config (45008d7) — all three land verbatim in the
+  // injected script tag (src / data-website-id / data-domains), so they are
+  // public by design, not credentials.
+  'VITE_UMAMI_DOMAINS',
+  'VITE_UMAMI_SCRIPT_SRC',
+  'VITE_UMAMI_WEBSITE_ID',
   'VITE_VAPID_PUBLIC_KEY',
   'VITE_VARIANT',
   'VITE_WS_API_URL',

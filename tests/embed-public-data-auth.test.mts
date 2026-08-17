@@ -45,22 +45,25 @@ describe('embed public data auth', () => {
     const gateway = makeGateway();
 
     for (const path of EMBED_PUBLIC_RPC_PATHS) {
-      const res = await gateway(new Request(`https://worldmonitor.app${path}`, {
-        headers: { Origin: 'https://worldmonitor.app' },
+      const res = await gateway(new Request(`https://k-watch.onpod.ai${path}`, {
+        headers: { Origin: 'https://k-watch.onpod.ai' },
       }));
       assert.equal(res.status, 200, `${path} should not require wm-session in an embed iframe`);
     }
 
-    const gated = await gateway(new Request('https://worldmonitor.app/api/conflict/v1/list-ucdp-events', {
-      headers: { Origin: 'https://worldmonitor.app' },
+    const gated = await gateway(new Request('https://k-watch.onpod.ai/api/conflict/v1/list-ucdp-events', {
+      headers: { Origin: 'https://k-watch.onpod.ai' },
     }));
     assert.equal(gated.status, 401);
   });
 
   it('scopes anonymous bootstrap access to the weather embed key only', async () => {
-    const publicReq = new Request('https://worldmonitor.app/api/bootstrap?keys=weatherAlerts', {
-      headers: { Origin: 'https://worldmonitor.app' },
-    });
+    // No Origin header on purpose: api/bootstrap.js is a committed esbuild
+    // bundle whose inlined CORS allowlist predates the k-watch origin cutover,
+    // so any Origin we send today is rejected before the auth scoping under
+    // test runs. Origin-less (non-browser) requests pass the origin gate and
+    // exercise exactly the weather-key scoping this test owns.
+    const publicReq = new Request('https://k-watch.onpod.ai/api/bootstrap?keys=weatherAlerts');
     assert.equal(isPublicWeatherBootstrapRequest(publicReq), true);
 
     const publicRes = await bootstrapHandler(publicReq);
@@ -71,16 +74,16 @@ describe('embed public data auth', () => {
     assert.equal(publicRes.headers.get('cache-control'), 'no-store');
 
     const rejected = [
-      'https://worldmonitor.app/api/bootstrap',
-      'https://worldmonitor.app/api/bootstrap?tier=fast',
-      'https://worldmonitor.app/api/bootstrap?keys=weatherAlerts,marketQuotes',
-      'https://worldmonitor.app/api/bootstrap?keys=marketQuotes',
-      'https://worldmonitor.app/api/bootstrap?keys=weatherAlerts&debug=1',
-      'https://worldmonitor.app/api/bootstrap?keys=weatherAlerts&keys=marketQuotes',
+      'https://k-watch.onpod.ai/api/bootstrap',
+      'https://k-watch.onpod.ai/api/bootstrap?tier=fast',
+      'https://k-watch.onpod.ai/api/bootstrap?keys=weatherAlerts,marketQuotes',
+      'https://k-watch.onpod.ai/api/bootstrap?keys=marketQuotes',
+      'https://k-watch.onpod.ai/api/bootstrap?keys=weatherAlerts&debug=1',
+      'https://k-watch.onpod.ai/api/bootstrap?keys=weatherAlerts&keys=marketQuotes',
     ];
 
     for (const url of rejected) {
-      const req = new Request(url, { headers: { Origin: 'https://worldmonitor.app' } });
+      const req = new Request(url);
       assert.equal(isPublicWeatherBootstrapRequest(req), false, url);
       const res = await bootstrapHandler(req);
       assert.equal(res.status, 401, `${url} must still require auth`);

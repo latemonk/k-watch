@@ -26,11 +26,11 @@ function stripComments(source: string): string {
 
 describe('cors helper', () => {
   it('returns headers for a well-formed request', () => {
-    const req = new Request('https://worldmonitor.app/x', {
-      headers: { Origin: 'https://worldmonitor.app' },
+    const req = new Request('https://k-watch.onpod.ai/x', {
+      headers: { Origin: 'https://k-watch.onpod.ai' },
     });
     const headers = getCorsHeaders(req);
-    assert.equal(headers['Access-Control-Allow-Origin'], 'https://worldmonitor.app');
+    assert.equal(headers['Access-Control-Allow-Origin'], 'https://k-watch.onpod.ai');
     assert.match(
       headers['Access-Control-Allow-Headers'],
       /(?:^|,\s*)Idempotency-Key(?:,|$)/,
@@ -75,29 +75,36 @@ describe('cors helper', () => {
   });
 });
 
-// The Vercel project moved from the personal scope (worldmonitor-*-elie-<hash>)
-// to the "eliewm" team scope. Browsers send Origin on the POST to
-// /api/wm-session, so a stale allowlist 403s every preview deployment and the
-// anonymous session can never be minted (dashboard + /welcome teasers stay dark).
-describe('isAllowedOrigin — Vercel preview allowlist (eliewm team scope)', () => {
+// Commit 45008d7 removed trust in the upstream worldmonitor.app hosts and
+// their "eliewm" Vercel preview scope: this allowlist is paired with
+// Access-Control-Allow-Credentials: true, so an entry is a standing grant for
+// that domain's pages to make authenticated cross-origin calls here — and the
+// fork does not control the upstream domains. The former ALLOWED fixtures are
+// kept below as REJECTED so the removal cannot silently regress.
+describe('isAllowedOrigin — upstream worldmonitor.app trust removed (45008d7)', () => {
   // Origin for the JS twin (api/_cors.js exports isDisallowedOrigin, not the
   // bare predicate) — same allow/deny outcome proves both files stay in sync.
   const allowedByJsTwin = (origin: string) =>
-    !isDisallowedOriginJs(new Request('https://worldmonitor.app/x', { headers: { Origin: origin } }));
+    !isDisallowedOriginJs(new Request('https://k-watch.onpod.ai/x', { headers: { Origin: origin } }));
 
+  // Positive control: the only allowed web origin is the fork's own host, so
+  // the rejections below prove a tight allowlist rather than a broken predicate.
   const ALLOWED = [
-    ['git-branch alias URL', 'https://worldmonitor-git-feature-eliewm.vercel.app'],
-    ['hash deployment URL', 'https://worldmonitor-abc123def456-eliewm.vercel.app'],
-    ['apex production origin', 'https://worldmonitor.app'],
-    ['production subdomain', 'https://tech.worldmonitor.app'],
+    ['own K-Watch origin', 'https://k-watch.onpod.ai'],
   ];
 
   const REJECTED = [
+    ['upstream git-branch alias URL (removed 45008d7)', 'https://worldmonitor-git-feature-eliewm.vercel.app'],
+    ['upstream hash deployment URL (removed 45008d7)', 'https://worldmonitor-abc123def456-eliewm.vercel.app'],
+    ['upstream worldmonitor.app apex (removed 45008d7)', 'https://worldmonitor.app'],
+    ['upstream production subdomain (removed 45008d7)', 'https://tech.worldmonitor.app'],
     ['non-worldmonitor vercel.app origin', 'https://some-other-app-eliewm.vercel.app'],
     ['foreign team scope', 'https://worldmonitor-git-feature-attacker.vercel.app'],
     ['bare worldmonitor vercel.app (no scope segment)', 'https://worldmonitor.vercel.app'],
     ['suffix-spoofed eliewm origin', 'https://worldmonitor-git-feature-eliewm.vercel.app.evil.com'],
     ['dead personal-scope preview (post-migration)', 'https://worldmonitor-feature-elie-abc123.vercel.app'],
+    ['suffix-spoofed own origin', 'https://k-watch.onpod.ai.evil.example'],
+    ['co-tenant onpod.ai origin (no *.onpod.ai wildcard)', 'https://agent-store.onpod.ai'],
   ];
 
   for (const [label, origin] of ALLOWED) {
@@ -115,14 +122,19 @@ describe('isAllowedOrigin — Vercel preview allowlist (eliewm team scope)', () 
   }
 });
 
-describe('CORS triplet parity — eliewm preview pattern stays tight in all three twins', () => {
-  // Root cause of the original 403s was twins drifting. THREE surfaces gate
-  // Vercel-preview CORS and must move together; guard each for:
-  // (1) the eliewm-scoped preview pattern is present, and
-  // (2) no bare *.vercel.app wildcard sneaks in as a "fix".
+describe('CORS triplet parity — upstream origin patterns stay out of all three twins (45008d7)', () => {
+  // Root cause of the original drift was twins moving separately. THREE
+  // surfaces gate credentialed CORS and must move together; 45008d7 removed
+  // the upstream worldmonitor.app hosts and the eliewm Vercel preview scope
+  // from all of them, so guard each for:
+  // (1) the fork's own k-watch.onpod.ai pattern is present (positive control
+  //     that we are reading the real allowlist source),
+  // (2) neither the eliewm preview pattern nor any worldmonitor.app host
+  //     pattern reappears, and
+  // (3) no bare *.vercel.app wildcard sneaks in as a "fix".
   // The Cloudflare Worker is the load-bearing one: it short-circuits OPTIONS at
-  // the edge, so if it drifts narrower the browser blocks the preflight before
-  // Vercel is ever consulted.
+  // the edge, so if it drifts wider it re-grants credentialed CORS before the
+  // function-side allowlist is ever consulted.
   const TWINS = [
     '../server/cors.ts',
     '../api/_cors.js',
@@ -130,11 +142,21 @@ describe('CORS triplet parity — eliewm preview pattern stays tight in all thre
   ];
 
   for (const rel of TWINS) {
-    it(`${rel} scopes Vercel previews to the eliewm team`, async () => {
+    it(`${rel} allows only the K-Watch origin pattern`, async () => {
       const source = await readFile(new URL(rel, import.meta.url), 'utf8');
       assert.ok(
-        source.includes('-eliewm\\.vercel\\.app'),
-        `${rel} must allow worldmonitor-*-eliewm.vercel.app previews`,
+        source.includes('k-watch\\.onpod\\.ai'),
+        `${rel} must contain the k-watch.onpod.ai origin pattern`,
+      );
+      assert.ok(
+        !source.includes('-eliewm\\.vercel\\.app'),
+        `${rel} must not re-allow upstream eliewm.vercel.app previews (removed 45008d7)`,
+      );
+      // Matches the escaped-regex form only, so prose comments that mention
+      // the upstream domain do not trip the guard — only a real pattern does.
+      assert.ok(
+        !source.includes('worldmonitor\\.app'),
+        `${rel} must not re-allow upstream worldmonitor.app hosts (removed 45008d7)`,
       );
       assert.ok(
         !source.includes('worldmonitor-[a-z0-9-]+\\.vercel\\.app'),
@@ -148,8 +170,8 @@ describe('CORS Worker superset invariant — edge allowlist ⊇ function allowli
   // The api-cors-preflight Worker (workers/api-cors-preflight) short-circuits
   // OPTIONS preflights at the edge, so its allowlist MUST be a superset of
   // api/_cors.js. If the Worker rejects an origin the function would accept,
-  // the preflight echoes the canonical worldmonitor.app fallback and the
-  // browser blocks the request before it reaches Vercel.
+  // the preflight echoes the canonical k-watch.onpod.ai fallback and the
+  // browser blocks the request before it reaches the function.
   //
   // The Worker's own test (workers/api-cors-preflight/index.test.mjs) lives
   // OUTSIDE the test:data glob and only runs in deploy-worker.yml on
@@ -160,23 +182,32 @@ describe('CORS Worker superset invariant — edge allowlist ⊇ function allowli
   // Localhost/127 are intentionally omitted: they are DEV-only on the function
   // side (NODE_ENV-gated) and never reach the prod-only Worker.
   const fnAllows = (origin: string) =>
-    !isDisallowedOriginJs(new Request('https://worldmonitor.app/x', { headers: { Origin: origin } }));
+    !isDisallowedOriginJs(new Request('https://k-watch.onpod.ai/x', { headers: { Origin: origin } }));
 
   const PROD_ORIGINS = [
+    'https://k-watch.onpod.ai',
+    'tauri://localhost',
+    'asset://localhost',
+    // Negatives — the function rejects these (upstream hosts removed 45008d7),
+    // so the superset assertion is a no-op for them; included to document the
+    // boundary.
     'https://worldmonitor.app',
     'https://www.worldmonitor.app',
     'https://tech.worldmonitor.app',
     'https://worldmonitor-git-feature-eliewm.vercel.app',
     'https://worldmonitor-abc123def456-eliewm.vercel.app',
-    'tauri://localhost',
-    'asset://localhost',
-    // Negatives — the function rejects these, so the superset assertion is a
-    // no-op for them; included to document the boundary.
     'https://some-other-app-eliewm.vercel.app',
     'https://worldmonitor-git-feature-attacker.vercel.app',
     'https://worldmonitor-feature-elie-abc123.vercel.app',
+    'https://agent-store.onpod.ai',
     'https://evil.com',
   ];
+
+  // Guard the guard: the fork's own origin MUST be in the allowed side of the
+  // fixture set, otherwise the superset loop below degrades into all no-ops.
+  it('fixture sanity — api/_cors.js allows the K-Watch origin', () => {
+    assert.equal(fnAllows('https://k-watch.onpod.ai'), true);
+  });
 
   for (const origin of PROD_ORIGINS) {
     it(`Worker allows everything the function allows: ${origin}`, () => {
@@ -184,7 +215,7 @@ describe('CORS Worker superset invariant — edge allowlist ⊇ function allowli
         assert.equal(
           isAllowedOriginWorker(origin),
           true,
-          `Worker rejects ${origin} that api/_cors.js accepts — its OPTIONS preflight will echo the worldmonitor.app fallback and the browser will block it`,
+          `Worker rejects ${origin} that api/_cors.js accepts — its OPTIONS preflight will echo the k-watch.onpod.ai fallback and the browser will block it`,
         );
       }
     });

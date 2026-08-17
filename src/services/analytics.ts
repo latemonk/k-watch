@@ -28,9 +28,20 @@ import { DODO_PRODUCT_IDS } from '@/config/product-ids.generated';
 // Note on data-domains: the tracker self-disables when the current hostname
 // is not an EXACT match in the list, so the apex and any www/subdomain form
 // must both be listed if both serve traffic.
-const UMAMI_SCRIPT_SRC = import.meta.env.VITE_UMAMI_SCRIPT_SRC ?? '';
-const UMAMI_WEBSITE_ID = import.meta.env.VITE_UMAMI_WEBSITE_ID ?? '';
-const UMAMI_DOMAINS = import.meta.env.VITE_UMAMI_DOMAINS ?? '';
+//
+// Guarded like config/variant.ts so node:test — where import.meta.env is
+// undefined — resolves the trio to '' (telemetry off) at module load.
+const [UMAMI_SCRIPT_SRC, UMAMI_WEBSITE_ID, UMAMI_DOMAINS] = (() => {
+  try {
+    return [
+      import.meta.env.VITE_UMAMI_SCRIPT_SRC ?? '',
+      import.meta.env.VITE_UMAMI_WEBSITE_ID ?? '',
+      import.meta.env.VITE_UMAMI_DOMAINS ?? '',
+    ];
+  } catch {
+    return ['', '', ''];
+  }
+})();
 const UMAMI_QUEUE_LIMIT = 50;
 const UMAMI_LOAD_ATTEMPT_LIMIT = 2;
 const UMAMI_LOAD_RETRY_DELAY_MS = 5_000;

@@ -28,8 +28,8 @@ function makeRequest(method, url, headers = {}) {
   return new Request(url, { method, headers });
 }
 
-const CANONICAL_FALLBACK = 'https://worldmonitor.app';
-const KNOWN_GOOD = 'https://www.worldmonitor.app';
+const CANONICAL_FALLBACK = 'https://k-watch.onpod.ai';
+const KNOWN_GOOD = 'https://k-watch.onpod.ai';
 const ACAH_EXPECTED = 'Content-Type, Authorization, X-WorldMonitor-Key, X-Api-Key, X-Widget-Key, X-Pro-Key, X-WorldMonitor-Desktop-Timestamp, X-WorldMonitor-Desktop-Signature, Idempotency-Key, Mcp-Session-Id, MCP-Protocol-Version, Last-Event-ID';
 const ACEH_EXPECTED = 'Mcp-Session-Id, WWW-Authenticate, Retry-After, Idempotency-Key, Idempotent-Replayed, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset, X-WorldMonitor-Bbox, X-WorldMonitor-Bbox-Missing, X-WorldMonitor-Bbox-Invalid, X-Military-Bbox';
 // Must be a superset of every method any api/* route advertises. Notably
@@ -40,24 +40,27 @@ const ACAM_EXPECTED = 'GET, POST, DELETE, HEAD, OPTIONS';
 
 // --- allowlist coverage ---------------------------------------------------
 
-test('isAllowedOrigin accepts apex worldmonitor.app and subdomains', () => {
-  assert.equal(isAllowedOrigin('https://worldmonitor.app'), true);
-  assert.equal(isAllowedOrigin('https://www.worldmonitor.app'), true);
-  assert.equal(isAllowedOrigin('https://tech.worldmonitor.app'), true);
-  assert.equal(isAllowedOrigin('https://commodity.worldmonitor.app'), true);
+test('isAllowedOrigin accepts exactly the K-Watch origin', () => {
+  assert.equal(isAllowedOrigin('https://k-watch.onpod.ai'), true);
 });
 
-test('isAllowedOrigin accepts Vercel preview deploys under the eliewm team scope (mirrors api/_cors.js)', () => {
-  // The project deploys previews under the "eliewm" Vercel team scope, so URLs
-  // end in `-eliewm.vercel.app` (git-branch alias AND hash deployment forms).
-  // The Worker MUST mirror api/_cors.js exactly — if it stays narrower, eliewm
-  // preview preflights echo the canonical worldmonitor.app fallback and the
-  // browser blocks them before the request ever reaches Vercel.
-  assert.equal(isAllowedOrigin('https://worldmonitor-git-feat-x-eliewm.vercel.app'), true);
-  assert.equal(isAllowedOrigin('https://worldmonitor-r6q9o-eliewm.vercel.app'), true);
-  // Tight allowlist: a foreign team scope, a non-worldmonitor app, and the
-  // retired personal scope (worldmonitor-*-elie-<hash>, migration complete)
-  // must all stay rejected. Never a bare *.vercel.app.
+test('isAllowedOrigin rejects upstream worldmonitor.app hosts (removed 45008d7, mirrors api/_cors.js)', () => {
+  // This allowlist is paired with Access-Control-Allow-Credentials: true, so
+  // an entry is a standing grant for that domain's pages to make authenticated
+  // calls here. Upstream's worldmonitor.app is a third party to this fork; it
+  // was inherited from the upstream snapshot and must stay out.
+  assert.equal(isAllowedOrigin('https://worldmonitor.app'), false);
+  assert.equal(isAllowedOrigin('https://www.worldmonitor.app'), false);
+  assert.equal(isAllowedOrigin('https://tech.worldmonitor.app'), false);
+  assert.equal(isAllowedOrigin('https://commodity.worldmonitor.app'), false);
+});
+
+test('isAllowedOrigin rejects Vercel preview deploys, including the upstream eliewm team scope (removed 45008d7)', () => {
+  // Upstream deployed previews under the "eliewm" Vercel team scope. The fork
+  // does not control that scope, so it gets no credentialed grant — and
+  // neither does any other vercel.app origin. Never a bare *.vercel.app.
+  assert.equal(isAllowedOrigin('https://worldmonitor-git-feat-x-eliewm.vercel.app'), false);
+  assert.equal(isAllowedOrigin('https://worldmonitor-r6q9o-eliewm.vercel.app'), false);
   assert.equal(isAllowedOrigin('https://worldmonitor-feat-x-attacker.vercel.app'), false);
   assert.equal(isAllowedOrigin('https://some-other-app-eliewm.vercel.app'), false);
   assert.equal(isAllowedOrigin('https://worldmonitor-abc-elie-habib.vercel.app'), false);

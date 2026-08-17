@@ -61,18 +61,18 @@ function makeRequest(pathAndQuery: string): Request {
   bypassMaritimeRateLimitForLocalGatewayTest(pathAndQuery);
   process.env.WORLDMONITOR_VALID_KEYS = TEST_KEY;
   return new Request(
-    'https://worldmonitor.app' + pathAndQuery,
-    { headers: { Origin: 'https://worldmonitor.app', 'X-WorldMonitor-Key': TEST_KEY } },
+    'https://k-watch.onpod.ai' + pathAndQuery,
+    { headers: { Origin: 'https://k-watch.onpod.ai', 'X-WorldMonitor-Key': TEST_KEY } },
   );
 }
 
 function makeJsonPostRequest(path: string, bodyObject: Record<string, unknown>): Request {
   process.env.WORLDMONITOR_VALID_KEYS = TEST_KEY;
   const body = JSON.stringify(bodyObject);
-  return new Request('https://worldmonitor.app' + path, {
+  return new Request('https://k-watch.onpod.ai' + path, {
     method: 'POST',
     headers: {
-      Origin: 'https://worldmonitor.app',
+      Origin: 'https://k-watch.onpod.ai',
       'X-WorldMonitor-Key': TEST_KEY,
       'Content-Type': 'application/json',
       'Content-Length': String(new TextEncoder().encode(body).byteLength),
@@ -83,7 +83,7 @@ function makeJsonPostRequest(path: string, bodyObject: Record<string, unknown>):
 
 async function getGeneratedMilitaryFlightsPathAndQuery(req: Parameters<MilitaryServiceClient['listMilitaryFlights']>[0]): Promise<string> {
   let requestedUrl = '';
-  const client = new MilitaryServiceClient('https://worldmonitor.app', {
+  const client = new MilitaryServiceClient('https://k-watch.onpod.ai', {
     fetch: async (input) => {
       requestedUrl = String(input);
       return new Response(JSON.stringify({ flights: [], clusters: [] }), {

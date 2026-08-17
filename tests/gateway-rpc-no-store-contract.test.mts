@@ -36,9 +36,9 @@ function setGatewayAuthEnv() {
 function request(pathAndQuery: string): Request {
   setGatewayAuthEnv();
   const separator = pathAndQuery.includes('?') ? '&' : '?';
-  return new Request('https://worldmonitor.app' + pathAndQuery + separator + '_debug=1', {
+  return new Request('https://k-watch.onpod.ai' + pathAndQuery + separator + '_debug=1', {
     headers: {
-      Origin: 'https://worldmonitor.app',
+      Origin: 'https://k-watch.onpod.ai',
       'X-WorldMonitor-Key': TEST_KEY,
     },
   });
