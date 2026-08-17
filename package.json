@@ -118,6 +118,8 @@
     "@bufbuild/buf": "^1.66.0",
     "@clerk/clerk-js": "^6.13.0",
     "@edge-runtime/vm": "^5.0.0",
+    "@loaders.gl/wms": "^4.3.4",
+    "@loaders.gl/xml": "^4.3.4",
     "@playwright/test": "^1.52.0",
     "@tauri-apps/cli": "^2.10.0",
     "@types/canvas-confetti": "^1.9.0",
