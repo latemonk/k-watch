@@ -725,22 +725,44 @@ function resolveHandlerTimeoutMs(mode) {
   return mode === 'docker' ? 110_000 : 0;
 }
 
-function raceHandlerTimeout(handlerPromise, pathname, timeoutMs, logger) {
-  // 타임아웃이 레이스를 이긴 뒤 버려진 핸들러 프라미스가 나중에 reject 하면
-  // unhandledRejection 으로 프로세스가 통째로 죽는다(Node 15+ 기본 throw).
-  // 별도 브랜치로 소비만 해 두면 레이스 자체의 reject 전파(아래 race →
-  // dispatch 의 try/catch)에는 영향이 없다.
-  handlerPromise.catch(() => {});
+// 504 응답에만 붙는 내부 마커. dispatch 가 cloudPreferred 오염 판정에 쓴다.
+const HANDLER_TIMEOUT_MARKER = 'x-local-handler-timeout';
+
+function raceHandlerTimeout(handlerRet, pathname, timeoutMs, logger) {
+  // 동기 핸들러는 Promise 가 아니라 Response 를 그대로 반환한다
+  // (api/[...notfound].js·OAuth discovery 등) — .catch 를 바로 걸면
+  // TypeError 다. 반드시 Promise 로 승격부터.
+  const handlerPromise = Promise.resolve(handlerRet);
+  let timedOut = false;
+  // 타임아웃이 레이스를 이긴 뒤 버려진 핸들러 프라미스가 (1) 나중에 reject
+  // 하면 unhandledRejection 으로 프로세스가 통째로 죽고(Node 15+ 기본
+  // throw), (2) 나중에 Response 로 resolve 하면 소비되지 않은 body 스트림이
+  // undici keep-alive 커넥션을 물고 있는다. 별도 브랜치에서 둘 다 정리 —
+  // 레이스 자체의 reject 전파(아래 race → dispatch 의 try/catch)에는 영향
+  // 없다.
+  handlerPromise.then(
+    (settled) => {
+      if (timedOut && settled instanceof Response) {
+        try { settled.body?.cancel(); } catch { /* already consumed/closed */ }
+      }
+    },
+    () => {},
+  );
   let timer;
   const timeout = new Promise((resolve) => {
     timer = setTimeout(() => {
+      timedOut = true;
       // logOnce 가 아니라 매번 기록: 웨지 상태에선 「어떤 라우트가 언제부터
       // 몇 번」이 유일한 진단 단서다.
       logger.error(
         `[local-api] handler timeout: ${pathname} exceeded ${timeoutMs}ms — returning 504. ` +
         'Repeated timeouts across routes indicate a wedged process (see api-watchdog).',
       );
-      resolve(json({ error: 'Handler timeout', endpoint: pathname, timeoutMs }, 504));
+      resolve(json(
+        { error: 'Handler timeout', endpoint: pathname, timeoutMs },
+        504,
+        { [HANDLER_TIMEOUT_MARKER]: '1' },
+      ));
     }, timeoutMs);
     timer.unref?.();
   });
@@ -790,6 +812,8 @@ function resolveConfig(options = {}) {
   const mode = String(options.mode ?? process.env.LOCAL_API_MODE ?? 'desktop-sidecar');
   const requestedFallback = String(options.cloudFallback ?? process.env.LOCAL_API_CLOUD_FALLBACK ?? '') === 'true';
   const cloudFallback = mode === 'docker' ? false : requestedFallback;
+  // 프로세스 수명 동안 불변인 값 — 요청마다 env 재파싱하지 않는다.
+  const handlerTimeoutMs = resolveHandlerTimeoutMs(mode);
   // Programmatic dev/test escape hatch only; CLI/env startup keeps private remoteBase blocked.
   const allowPrivateRemoteBase = options.allowPrivateRemoteBase === true;
   // Programmatic-only test escape hatch for adding extra origins to the
@@ -818,6 +842,7 @@ function resolveConfig(options = {}) {
     apiDir,
     mode,
     cloudFallback,
+    handlerTimeoutMs,
     allowPrivateRemoteBase,
     allowPrivateFetchOrigins,
     logger,
@@ -1746,9 +1771,8 @@ async function dispatch(requestUrl, req, routes, context) {
       body,
     });
 
-    const handlerTimeoutMs = resolveHandlerTimeoutMs(context.mode);
-    const response = handlerTimeoutMs > 0
-      ? await raceHandlerTimeout(mod.default(request), requestUrl.pathname, handlerTimeoutMs, context.logger)
+    const response = context.handlerTimeoutMs > 0
+      ? await raceHandlerTimeout(mod.default(request), requestUrl.pathname, context.handlerTimeoutMs, context.logger)
       : await mod.default(request);
     if (!(response instanceof Response)) {
       logOnce(context.logger, requestUrl.pathname, 'handler returned non-Response');
@@ -1761,7 +1785,15 @@ async function dispatch(requestUrl, req, routes, context) {
 
     if (!response.ok && context.cloudFallback) {
       const cloudResponse = await tryCloudFallback(requestUrl, req, context, `local status ${response.status}`);
-      if (cloudResponse) { cloudPreferred.add(requestUrl.pathname); return cloudResponse; }
+      if (cloudResponse) {
+        // 핸들러 타임아웃 504 는 일시 저속일 수 있다 — 이 요청만 클라우드로
+        // 보내되 cloudPreferred 에 눌러앉히지 않는다(눌러앉히면 로컬 핸들러가
+        // 회복해도 프로세스 수명 내내 스킵된다).
+        if (!response.headers.get(HANDLER_TIMEOUT_MARKER)) {
+          cloudPreferred.add(requestUrl.pathname);
+        }
+        return cloudResponse;
+      }
     }
 
     return response;

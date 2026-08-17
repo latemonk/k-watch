@@ -12026,7 +12026,12 @@ function connectUpstream() {
       upstreamSocket?.readyState === WebSocket.CONNECTING) return;
 
   console.log('[Relay] Connecting to aisstream.io...');
-  const socket = new WebSocket(AISSTREAM_URL);
+  // handshakeTimeout: TCP/TLS 는 붙었는데 WS 업그레이드 응답이 영영 안 오면
+  // readyState 가 CONNECTING 에 고정된다 — connectUpstream 의 재진입 가드가
+  // CONNECTING 도 막으므로 이후 모든 재접속 시도가 무음 no-op 이 되는
+  // 웨지다(OPEN 순단과 같은 급, 한 단계 앞). 타임아웃 시 ws 가 'error'→
+  // 'close' 를 발화해 기존 5초 재접속 경로에 태운다.
+  const socket = new WebSocket(AISSTREAM_URL, { handshakeTimeout: 30_000 });
   upstreamSocket = socket;
   clearUpstreamQueue();
   upstreamPaused = false;
@@ -12230,11 +12235,18 @@ setInterval(() => {
 // terminate() 로 close 를 강제 발화시켜 기존 5초 재접속 경로에 태운다.
 // 한반도 bbox 구독은 평시 분당 수십 건이 들어오므로(15일 평균 25건/분)
 // 10분 무수신은 트래픽 저점이 아니라 순단이다. 필요시 env 로 조정.
+// 명시적 0 이하 = 비활성(점검 창 등 운영 탈출구), 미설정·비숫자 = 기본 10분.
+// local-api-server 의 LOCAL_API_HANDLER_TIMEOUT_MS 와 같은 시맨틱.
 const AIS_STALL_RECONNECT_MS = (() => {
-  const parsed = Number.parseInt(process.env.AIS_STALL_RECONNECT_MS ?? '', 10);
-  return parsed > 0 ? parsed : 10 * 60 * 1000;
+  const raw = process.env.AIS_STALL_RECONNECT_MS;
+  if (raw !== undefined && raw !== '') {
+    const parsed = Number.parseInt(raw, 10);
+    if (Number.isFinite(parsed)) return parsed > 0 ? parsed : 0;
+  }
+  return 10 * 60 * 1000;
 })();
 setInterval(() => {
+  if (!AIS_STALL_RECONNECT_MS) return;
   if (!upstreamSocket || upstreamSocket.readyState !== WebSocket.OPEN) return;
   if (!lastUpstreamMessageAt) return;
   const silentMs = Date.now() - lastUpstreamMessageAt;

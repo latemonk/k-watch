@@ -55,8 +55,12 @@ function main() {
   log(`watching ${PROBE_URL} every ${INTERVAL_MS}ms (timeout ${PROBE_TIMEOUT_MS}ms, kill after ${CONSECUTIVE_FAILS} consecutive timeouts)`);
   let consecutiveTimeouts = 0;
   let cooldownRemaining = 0;
-  // 부팅 직후는 api 서버가 아직 뜨는 중일 수 있어 첫 프로브를 한 사이클 늦춘다.
+  // 부팅 직후는 api 서버가 아직 뜨는 중일 수 있어 첫 프로브를 한 사이클
+  // 늦춘다. 같은 시점에 KILL_PATTERN 이 실프로세스와 맞는지 자가진단 —
+  // 패턴 드리프트는 「웨지 때 pkill 이 아무것도 못 맞추는」 무음 고장이라
+  // 부팅 로그에서 미리 크게 알린다.
   setTimeout(() => {
+    void selfCheckKillPattern();
     void probeOnce();
     setInterval(() => { void probeOnce(); }, INTERVAL_MS);
   }, INTERVAL_MS);
@@ -72,23 +76,38 @@ function main() {
         headers: TOKEN ? { Authorization: `Bearer ${TOKEN}` } : {},
         signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
       });
-      // 응답 스트림을 버리지 않으면 keep-alive 소켓이 오염된다.
-      await resp.arrayBuffer().catch(() => {});
+      // body 를 끝까지 읽어야 (1) keep-alive 소켓이 안 오염되고 (2) 「헤더만
+      // 뱉고 body 에서 멈추는」 웨지도 잡힌다. body 읽기 실패는 삼키지 말고
+      // 아래 catch 로 흘려 타임아웃이면 스트라이크로 센다.
+      await resp.arrayBuffer();
+      if (resp.status === 401 || resp.status === 403) {
+        // 인증 게이트에서 튕기면 핸들러 경로를 전혀 밟지 못한 것 — 프로브가
+        // 장님이 된 상태다(토큰 회전·per-program env 이동 등). 건강 판정은
+        // 유지하되 매 사이클 크게 남긴다.
+        warn(`probe answered HTTP ${resp.status} at the auth gate — probe is NOT exercising the handler path (token drift?); wedge detection is blind until fixed`);
+      }
       if (consecutiveTimeouts > 0) {
         log(`recovered: HTTP ${resp.status} in ${Date.now() - startedAt}ms after ${consecutiveTimeouts} timeout(s)`);
       }
       consecutiveTimeouts = 0;
     } catch (error) {
       const name = error?.name || '';
-      const isTimeout = name === 'TimeoutError' || name === 'AbortError';
+      const causeCode = error?.cause?.code || '';
+      // undici 는 연결·헤더·body 단계 타임아웃을 TypeError('fetch failed')
+      // 로 감싼다 — 이름만 보면 「집계 제외」로 새서, accept 백로그가 가득
+      // 찬 웨지(연결 자체가 안 잡힘)를 영영 못 세는 구멍이 된다.
+      const isTimeout = name === 'TimeoutError' || name === 'AbortError'
+        || causeCode === 'UND_ERR_CONNECT_TIMEOUT'
+        || causeCode === 'UND_ERR_HEADERS_TIMEOUT'
+        || causeCode === 'UND_ERR_BODY_TIMEOUT';
       if (!isTimeout) {
         // ECONNREFUSED 등 — 죽었거나 재시작 중. supervisord 소관이므로
         // 킬 카운터는 건드리지 않는다.
-        warn(`probe error (not counted): ${error?.cause?.code || error?.message || error}`);
+        warn(`probe error (not counted): ${causeCode || error?.message || error}`);
         return;
       }
       consecutiveTimeouts += 1;
-      warn(`probe timeout ${consecutiveTimeouts}/${CONSECUTIVE_FAILS} (no response in ${PROBE_TIMEOUT_MS}ms — wedged handler suspect)`);
+      warn(`probe timeout ${consecutiveTimeouts}/${CONSECUTIVE_FAILS} (${causeCode || name}: no full response in ${PROBE_TIMEOUT_MS}ms — wedged handler suspect)`);
       if (consecutiveTimeouts >= CONSECUTIVE_FAILS) {
         consecutiveTimeouts = 0;
         cooldownRemaining = COOLDOWN_CYCLES;
@@ -98,13 +117,31 @@ function main() {
   }
 }
 
+async function selfCheckKillPattern() {
+  const { execFile } = await import('node:child_process');
+  await new Promise((resolve) => {
+    execFile('pgrep', ['-f', KILL_PATTERN], (error) => {
+      if (error) {
+        console.error(`[ApiWatchdog] SELF-CHECK FAILED: no process matches KILL_PATTERN "${KILL_PATTERN}" — a wedge kill would be a silent no-op. Align it with the supervisord [program:worldmonitor-api] command.`);
+      } else {
+        log('self-check ok: KILL_PATTERN matches a live process');
+      }
+      resolve();
+    });
+  });
+}
+
 async function killApiServer() {
   warn(`WEDGE CONFIRMED — killing "${KILL_PATTERN}" so supervisord restarts it (2026-08-17 incident playbook)`);
   const { execFile } = await import('node:child_process');
   await new Promise((resolve) => {
     execFile('pkill', ['-f', KILL_PATTERN], (error) => {
-      if (error && error.code !== 1) {
-        // exit 1 = no process matched (이미 죽어 있음) — 정상 취급.
+      if (error && error.code === 1) {
+        // exit 1 = 매치 0건. 방금 죽었을 수도 있지만 KILL_PATTERN 드리프트일
+        // 수도 있다 — 후자면 「고쳤다는 로그만 남고 웨지는 생존」하는 최악의
+        // 무음 고장이므로 성공으로 위장하지 않고 크게 남긴다.
+        console.error(`[ApiWatchdog] pkill matched NOTHING for "${KILL_PATTERN}" — either the process just died (supervisord will restart it) or KILL_PATTERN drifted from the supervisord command. Verify with ps.`);
+      } else if (error) {
         warn(`pkill failed: ${error.message}`);
       } else {
         log('kill signal sent — supervisord autorestart will bring it back');

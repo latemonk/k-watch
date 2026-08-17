@@ -2184,3 +2184,37 @@ test('late handler rejection after timeout does not crash the process', async ()
     await localApi.cleanup();
   }
 });
+
+test('synchronous handlers (return Response, not Promise) work with the handler timeout enabled', async () => {
+  // Regression: raceHandlerTimeout called .catch() on the raw return value,
+  // which throws TypeError for sync handlers (api/[...notfound].js, OAuth
+  // discovery routes) and turned every such route into a 502 in docker mode.
+  process.env.LOCAL_API_HANDLER_TIMEOUT_MS = '300';
+  const localApi = await setupApiDir({
+    'sync-handler.js': `
+      export default function handler() {
+        return new Response(JSON.stringify({ sync: true }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' }
+        });
+      }
+    `,
+  });
+  const app = await createLocalApiServer({
+    port: 0,
+    apiDir: localApi.apiDir,
+    logger: { log() { }, warn() { }, error() { } },
+  });
+  const { port } = await app.start();
+
+  try {
+    const response = await authFetch(`http://127.0.0.1:${port}/api/sync-handler`);
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.sync, true);
+  } finally {
+    delete process.env.LOCAL_API_HANDLER_TIMEOUT_MS;
+    await app.close();
+    await localApi.cleanup();
+  }
+});
