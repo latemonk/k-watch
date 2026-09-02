@@ -1,0 +1,72 @@
+/* K-Watch 계정 위젯·데모 배너·구독 모달 (09-02) */
+/* 비동기 렌더로 헤더가 흔들리지 않게 자리를 먼저 확보(CLS 0) */
+#kwAccountMount { display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px; flex: 0 0 auto; min-width: 118px; min-height: 26px; }
+
+.kw-pill {
+  font-size: 10px; font-weight: 700; letter-spacing: .04em; padding: 2px 7px; border-radius: 999px;
+  border: 1px solid var(--border, #333); color: var(--text-dim, #aaa); white-space: nowrap;
+}
+.kw-pill-demo { color: #f0b429; border-color: rgba(240,180,41,.45); background: rgba(240,180,41,.08); }
+
+.kw-login-btn, .kw-user-btn {
+  display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px;
+  border-radius: 6px; border: 1px solid var(--border, #333); background: var(--bg-panel, #1c1c1c);
+  color: var(--text, #eee); font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap;
+  word-break: keep-all; line-height: 1;
+}
+.kw-login-btn:hover, .kw-user-btn:hover { border-color: var(--accent, #5fbf7f); }
+.kw-user-plan { font-size: 11px; color: var(--text-dim, #aaa); }
+.kw-avatar { width: 22px; height: 22px; border-radius: 50%; object-fit: cover; display: inline-block; }
+.kw-avatar-initial { background: #2f6fed; color: #fff; text-align: center; font-size: 11px; font-weight: 700; }
+
+.kw-menu {
+  position: fixed; z-index: 10050; width: 300px; padding: 12px; border-radius: 10px;
+  background: var(--bg-panel, #161616); border: 1px solid var(--border, #333); box-shadow: 0 12px 36px rgba(0,0,0,.5);
+  color: var(--text, #eee); font-size: 13px; word-break: keep-all;
+}
+.kw-menu-head { display: flex; align-items: center; gap: 10px; padding-bottom: 10px; border-bottom: 1px solid var(--border, #2a2a2a); }
+.kw-menu-name { font-weight: 700; }
+.kw-menu-email { font-size: 11px; color: var(--text-dim, #999); overflow-wrap: anywhere; }
+.kw-menu-status { padding: 10px 0; border-bottom: 1px solid var(--border, #2a2a2a); }
+.kw-menu-status-title { font-weight: 700; color: #5fbf7f; }
+.kw-menu-status-title.kw-warn { color: #f0a020; }
+.kw-menu-status-sub { font-size: 12px; color: var(--text-dim, #aaa); margin-top: 3px; }
+.kw-menu-actions { display: flex; flex-direction: column; gap: 6px; padding-top: 10px; }
+.kw-menu-btn {
+  height: 34px; border-radius: 8px; border: 1px solid var(--border, #333); background: transparent;
+  color: var(--text, #eee); font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.kw-menu-btn:hover { border-color: var(--accent, #5fbf7f); }
+.kw-menu-btn-primary { background: #2f6fed; border-color: #2f6fed; color: #fff; }
+.kw-menu-btn-primary:hover { background: #3b7cff; }
+
+#kwDemoBannerMount { flex: 0 0 auto; }
+.kw-demo-banner {
+  display: flex; align-items: center; gap: 12px; padding: 7px 14px; min-height: 42px; box-sizing: border-box;
+  background: rgba(240,180,41,.10); border-bottom: 1px solid rgba(240,180,41,.35);
+  color: var(--text, #eee); font-size: 12.5px; word-break: keep-all;
+}
+.kw-demo-banner-text { flex: 1 1 auto; min-width: 0; }
+.kw-demo-banner-text strong { color: #f0b429; margin-right: 6px; }
+.kw-demo-banner-cta {
+  display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 12px; border-radius: 6px;
+  border: 1px solid rgba(255,255,255,.18); background: #2f6fed; color: #fff; font-size: 12px; font-weight: 700;
+  cursor: pointer; white-space: nowrap;
+}
+.kw-demo-banner-cta:hover { background: #3b7cff; }
+.kw-demo-banner-close { background: transparent; border: 0; color: var(--text-dim, #aaa); cursor: pointer; font-size: 13px; padding: 4px 6px; }
+@media (max-width: 700px) {
+  .kw-demo-banner { flex-wrap: wrap; font-size: 12px; min-height: 0; }
+  .kw-pill-demo { display: none; }
+}
+
+.kw-sub { display: flex; flex-direction: column; gap: 14px; padding: 6px 2px; word-break: keep-all; }
+.kw-sub-price { display: flex; align-items: baseline; gap: 6px; }
+.kw-sub-price-num { font-size: 28px; font-weight: 800; }
+.kw-sub-price-unit { font-size: 13px; color: var(--text-dim, #aaa); }
+.kw-sub-benefits { margin: 0; padding-left: 18px; line-height: 1.7; font-size: 13.5px; }
+.kw-sub-note { margin: 0; font-size: 12px; color: var(--text-dim, #aaa); line-height: 1.6; }
+.kw-sub-btn {
+  height: 44px; border-radius: 10px; border: 0; background: #2f6fed; color: #fff; font-size: 15px; font-weight: 700; cursor: pointer;
+}
+.kw-sub-btn:disabled { opacity: .55; cursor: default; }

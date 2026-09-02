@@ -107,6 +107,7 @@ import { EventHandlerManager } from '@/app/event-handlers';
 import { replaceRawI18nKeyPlaceholders } from '@/app/i18n-raw-key-healer';
 import { resolveUserRegion, resolvePreciseUserCoordinates, type PreciseCoordinates } from '@/utils/user-location';
 import { initAuthState, subscribeAuthState } from '@/services/auth-state';
+import { mountKwAccount } from '@/components/KwAccountWidget';
 import {
   CLOUD_PREFS_APPLIED_EVENT,
   install as installCloudPrefsSync,
@@ -1577,6 +1578,8 @@ export class App {
     // (Phase 6 below) so its bytes + adapters stay off the eager boot graph (#4486).
     this.eventHandlers.setupUnifiedSettings();
     this.eventHandlers.setupAuthWidget();
+    // KCG fork(09-02): 구글 로그인·이용권·데모 배너 위젯(헤더 #kwAccountMount / #kwDemoBannerMount)
+    mountKwAccount();
     // Capture any ?ref= / ?wm_referral= from the URL into localStorage
     // and strip from the visible URL. Runs BEFORE the pending-checkout
     // capture so a /dashboard?ref=X&checkoutProduct=Y landing preserves both

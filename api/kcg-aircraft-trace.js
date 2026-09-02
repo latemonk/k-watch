@@ -5,6 +5,9 @@
 //                            기종·스쿼크·수직속도·IAS 등)
 // 브라우저가 adsb.lol 을 직접 못 부르는 이유: /data/traces 는 CORS 헤더가
 // 없다. 캐시는 트래픽 예의용 최소치(trace 10s / live 2s).
+// KCG fork(09-02): 데모 요청은 합성 항적 모델에서 궤적·상세를 만든다(상류 adsb.lol 호출 0회).
+import { resolveDataMode } from "./_kw-user-session.js";
+import { demoAircraftTrace, demoAircraftLive, isDemoIcao } from "./_kw-demo-aircraft.js";
 var config = { runtime: "edge" };
 
 var cache = /* @__PURE__ */ new Map();
@@ -132,6 +135,9 @@ async function handler(req) {
   const icao = String(url.searchParams.get("icao") || "").trim().toLowerCase();
   if (!/^[0-9a-f]{6}$/.test(icao)) return json(400, { error: "icao(hex 6자리) 파라미터가 필요해요" });
   const live = url.searchParams.get("live") === "1";
+  if ((await resolveDataMode(req)) === "demo" || isDemoIcao(icao)) {
+    return json(200, live ? demoAircraftLive(icao) : demoAircraftTrace(icao));
+  }
   const key = (live ? "live:" : "trace:") + icao;
   const ttl = live ? LIVE_TTL_MS : TRACE_TTL_MS;
   const hit = cacheGet(key, ttl);

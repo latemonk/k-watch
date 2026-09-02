@@ -7,6 +7,9 @@ import type {
 import { getRelayBaseUrl, getRelayHeaders } from './_shared';
 import { cachedFetchJson } from '../../../_shared/redis';
 import { CHROME_UA } from '../../../_shared/constants';
+// KCG fork(09-02): 로그인·이용권 게이트 — 데모 요청엔 합성 항적(순수 시간 함수)을 준다.
+import { resolveDataMode } from '../../../../api/_kw-user-session.js';
+import { demoAircraftPositions } from '../../../../api/_kw-demo-aircraft.js';
 
 // KCG fork(07-23): 120s → 10s. 업스트림 주석의 120s 는 익명 OpenSky 쿼터
 // 기준인데, 이 포크의 실제 소스는 커뮤니티 ADS-B(adsb.lol·airplanes.live)라
@@ -185,9 +188,18 @@ function buildCacheKey(req: TrackAircraftRequest): string {
 //   'wingbits'          — data from Wingbits via relay
 //   'none'              — all real sources returned empty or failed; positions = []
 export async function trackAircraft(
-    _ctx: ServerContext,
+    ctx: ServerContext,
     req: TrackAircraftRequest,
 ): Promise<TrackAircraftResponse> {
+    // KCG fork(09-02): 비로그인·이용권 만료 = 데모 항적(SIMULATED). 상류 ADS-B 호출 0회.
+    if ((await resolveDataMode(ctx.request)) === 'demo') {
+        const hasBbox = req.swLat || req.swLon || req.neLat || req.neLon;
+        const bbox = hasBbox ? { swLat: Number(req.swLat), swLon: Number(req.swLon), neLat: Number(req.neLat), neLon: Number(req.neLon) } : null;
+        let positions = demoAircraftPositions(Date.now(), bbox) as PositionSample[];
+        if (req.icao24) positions = positions.filter(p => p.icao24 === req.icao24.toLowerCase());
+        if (req.callsign) positions = positions.filter(p => p.callsign.includes(req.callsign.toUpperCase()));
+        return { positions, source: 'demo', updatedAt: Date.now() };
+    }
     const cacheKey = buildCacheKey(req);
 
     let result: { positions: PositionSample[]; source: string } | null = null;

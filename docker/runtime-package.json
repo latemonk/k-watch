@@ -5,7 +5,8 @@
   "dependencies": {
     "@upstash/ratelimit": "2.0.8",
     "@upstash/redis": "1.37.0",
-    "convex": "1.34.0"
+    "convex": "1.34.0",
+    "pg": "8.23.0"
   },
   "overrides": {
     "esbuild": "0.28.1",

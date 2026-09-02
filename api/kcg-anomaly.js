@@ -1,4 +1,6 @@
 // api/kcg-anomaly.js
+// KCG fork(09-02): 로그인·이용권 게이트 — 데모 요청은 LLM 을 부르지 않고 「정상」 판정을 돌려준다(API 비용 0).
+import { resolveDataMode } from "./_kw-user-session.js";
 var config = { runtime: "edge" };
 var SYSTEM_PROMPT = `\uB2F9\uC2E0\uC740 \uD574\uC5ED \uAD00\uC81C \uC0C1\uD669\uC2E4\uC758 \uC120\uBC15 \uD65C\uB3D9 \uD310\uB3C5 \uBD84\uC11D\uAD00\uC774\uB2E4. \uD55C\uAD6D \uADFC\uD574 \uAC10\uC2DC \uAD6C\uC5ED\uC758 \uD604\uC7AC \uC120\uBC15 \uD65C\uB3D9 \uC694\uC57D\uACFC \uC9C1\uC804 \uC694\uC57D(\uBCA0\uC774\uC2A4\uB77C\uC778), \uADF8\uB9AC\uACE0 \uAD00\uC81C \uADFC\uBB34\uC790\uAC00 \uC785\uB825\uD55C "\uD3C9\uC18C \uAE30\uC900"\uACFC "\uACBD\uBCF4 \uAE30\uC900"\uC744 \uBC1B\uB294\uB2E4. \uD604\uC7AC \uD65C\uB3D9\uC774 \uD3C9\uC18C \uAE30\uC900\uC5D0\uC11C \uC720\uC758\uBBF8\uD558\uAC8C \uBC97\uC5B4\uB0AC\uB294\uC9C0, \uACBD\uBCF4 \uAE30\uC900\uC5D0 \uD574\uB2F9\uD558\uB294 \uD65C\uB3D9\uC774 \uC788\uB294\uC9C0 \uD310\uB2E8\uD558\uB77C.
 
@@ -80,6 +82,9 @@ async function handler(req) {
   const previous = clampStr(body.previous, 8e3);
   const systemPrompt = body.domain === "aviation" ? AVIATION_SYSTEM_PROMPT : SYSTEM_PROMPT;
   if (!current) return json(400, { error: "current summary required" });
+  if ((await resolveDataMode(req)) === "demo") {
+    return json(200, demoVerdict(body.domain === "aviation"));
+  }
   const userPrompt = [
     "[\uAD00\uC81C \uADFC\uBB34\uC790\uAC00 \uC785\uB825\uD55C \uD3C9\uC18C \uAE30\uC900]",
     baseline || "(\uC785\uB825 \uC5C6\uC74C \u2014 \uC77C\uBC18\uC801\uC778 \uD55C\uAD6D \uADFC\uD574 \uD1B5\uD56D \uD328\uD134\uC744 \uD3C9\uC18C\uB85C \uAC04\uC8FC)",
@@ -154,6 +159,22 @@ async function handler(req) {
     }
   }
   return json(502, { error: "LLM providers configured but unavailable", upstreamStatus: lastUpstreamStatus || void 0 });
+}
+// 데모 판정 — 시연 화면용 고정 결과(모델 호출 없음)
+function demoVerdict(aviation) {
+  return {
+    triggered: false,
+    anomaly_score: 8,
+    severity: "info",
+    confidence: "medium",
+    headline: aviation ? "시연 데이터 — 정기편 위주의 평시 공역 활동" : "시연 데이터 — 조업·정기 항로 위주의 평시 해상 활동",
+    changes: [
+      aviation ? "국내선·근거리 국제선 정기편의 순항·접근 패턴만 관측" : "어선 조업 구역과 연안 화물·여객 항로에서 정시 운항 패턴만 관측",
+      "경보 기준에 해당하는 신호 없음",
+    ],
+    caveats: "지금 보이는 선박·항공기는 시연용 가상 데이터예요. 실시간 데이터의 AI 판독은 로그인 후 이용할 수 있어요.",
+    model: "demo",
+  };
 }
 function normalize(v, model) {
   const score = Math.max(0, Math.min(100, Math.round(Number(v.anomaly_score) || 0)));

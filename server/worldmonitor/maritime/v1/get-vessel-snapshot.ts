@@ -11,6 +11,9 @@ import type {
 } from '../../../../src/generated/server/worldmonitor/maritime/v1/service_server';
 
 import { getRelayBaseUrl, getRelayHeaders } from '../../../_shared/relay';
+// KCG fork(09-02): 로그인·이용권 게이트 — 데모 요청엔 합성 함대(순수 시간 함수)를 준다.
+import { resolveDataMode } from '../../../../api/_kw-user-session.js';
+import { demoVesselSnapshot } from '../../../../api/_kw-demo-fleet.js';
 
 // ========================================================================
 // Helpers
@@ -323,11 +326,19 @@ function extractAndValidateBbox(req: GetVesselSnapshotRequest): { swLat: number;
 }
 
 export async function getVesselSnapshot(
-  _ctx: ServerContext,
+  ctx: ServerContext,
   req: GetVesselSnapshotRequest,
 ): Promise<GetVesselSnapshotResponse> {
   try {
     const bbox = extractAndValidateBbox(req);
+    // KCG fork(09-02): 비로그인·이용권 만료 = 데모 — 실 릴레이를 건드리지 않고 시연 함대를 돌려준다
+    if ((await resolveDataMode(ctx.request)) === 'demo') {
+      const now = Date.now();
+      const snapshot = demoVesselSnapshot(now, {
+        bbox, includeCandidates: Boolean(req.includeCandidates), includeTankers: Boolean(req.includeTankers),
+      }) as unknown as VesselSnapshot;
+      return { snapshot, fetchedAt: now, dataAvailable: true };
+    }
     const snapshot = await fetchVesselSnapshot(
       Boolean(req.includeCandidates),
       Boolean(req.includeTankers),
