@@ -12,11 +12,12 @@
 html{word-break:keep-all;overflow-wrap:break-word}
 body{margin:0;background:var(--bg);color:var(--text);font:15px/1.55 -apple-system,BlinkMacSystemFont,system-ui,"Apple SD Gothic Neo","Pretendard","Noto Sans KR",Roboto,sans-serif}
 a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
-.top{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 22px;border-bottom:1px solid var(--border);background:var(--panel);position:sticky;top:0;z-index:2}
-.brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:16px}
+.top{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;padding:14px 22px;border-bottom:1px solid var(--border);background:var(--panel);position:sticky;top:0;z-index:2}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:16px;white-space:nowrap}
 .brand img{width:22px;height:22px;border-radius:5px}
 .brand small{color:var(--dim);font-weight:500;margin-left:6px}
-.top-right{display:flex;align-items:center;gap:10px;color:var(--dim);font-size:13px;white-space:nowrap}
+.top-right{display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:8px;color:var(--dim);font-size:13px;min-width:0}
+.top-right span{white-space:nowrap}
 .btn{background:var(--panel2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:7px 12px;font:inherit;font-size:13px;cursor:pointer}
 .btn:hover{border-color:#555}
 .btn-primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
@@ -57,7 +58,7 @@ tr.today td{background:#0f1622}
 .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:var(--dim)}
 .empty{padding:26px;text-align:center;color:var(--muted);font-size:13px}
 .foot{margin:36px 0 10px;color:var(--muted);font-size:12px;line-height:1.7}
-@media (max-width:640px){.wrap{padding:14px}.tile .value{font-size:24px}.tile.hero .value{font-size:32px}.top{padding:12px 14px}}
+@media (max-width:640px){.wrap{padding:14px}.tile .value{font-size:24px}.tile.hero .value{font-size:32px}.top{padding:10px 14px}#stamp{display:none}}
 </style>
 </head>
 <body>

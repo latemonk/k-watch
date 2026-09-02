@@ -52,7 +52,7 @@ export default async function handler(req) {
     q(`SELECT u.id, u.email, u.name, u.picture, u.live_until, u.toss_billing_key IS NOT NULL AS has_card, u.toss_card_label,
               u.sub_auto_renew, u.sub_fail_count, u.created_at, u.last_login_at,
               (SELECT coalesce(sum(amount_krw), 0) FROM kw_payments WHERE user_id = u.id AND status = 'paid') AS paid_total,
-              (SELECT max(day) FROM kw_user_activity WHERE user_id = u.id) AS last_active_day
+              (SELECT to_char(max(day), 'YYYY-MM-DD') FROM kw_user_activity WHERE user_id = u.id) AS last_active_day
        FROM kw_users u ORDER BY u.id DESC LIMIT 30`),
     q(`SELECT p.id, p.kind, p.order_id, p.order_name, p.amount_krw, p.status, p.fail_reason, p.created_at, p.paid_at, u.email
        FROM kw_payments p JOIN kw_users u ON u.id = p.user_id ORDER BY p.id DESC LIMIT 30`),
@@ -85,7 +85,7 @@ export default async function handler(req) {
       id: n(u.id), email: u.email, name: u.name, picture: u.picture,
       state: stateOf(u, now), liveUntil: ts(u.live_until), hasCard: Boolean(u.has_card), cardLabel: u.toss_card_label || null,
       autoRenew: Boolean(u.sub_auto_renew), failCount: n(u.sub_fail_count), createdAt: ts(u.created_at), lastLoginAt: ts(u.last_login_at),
-      paidTotal: n(u.paid_total), lastActiveDay: u.last_active_day ? String(u.last_active_day).slice(0, 10) : null,
+      paidTotal: n(u.paid_total), lastActiveDay: u.last_active_day || null,
     })),
     recentPayments: payments.rows.map((p) => ({
       id: n(p.id), email: p.email, kind: p.kind, orderId: p.order_id, orderName: p.order_name, amountKrw: n(p.amount_krw),
