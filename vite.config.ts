@@ -681,8 +681,11 @@ function sebufApiPlugin(): Plugin {
           // Write response
           res.statusCode = response.status;
           response.headers.forEach((value, key) => {
+            if (key.toLowerCase() === 'set-cookie') return;
             res.setHeader(key, value);
           });
+          const setCookies = response.headers.getSetCookie?.() ?? [];
+          if (setCookies.length) res.setHeader('set-cookie', setCookies);
           for (const [key, value] of Object.entries(corsHeaders)) {
             res.setHeader(key, value);
           }

@@ -1836,6 +1836,10 @@ export async function createLocalApiServer(options = {}) {
       const durationMs = Date.now() - start;
       let body = Buffer.from(await response.arrayBuffer());
       const headers = Object.fromEntries(response.headers.entries());
+      // Set-Cookie 는 같은 이름이 여러 개일 수 있어 fromEntries 가 마지막 것만 남긴다
+      // (구글 콜백=세션 쿠키+상태 쿠키 삭제 → 세션 쿠키 유실). 배열로 그대로 전달.
+      const setCookies = typeof response.headers.getSetCookie === 'function' ? response.headers.getSetCookie() : [];
+      if (setCookies.length) headers['set-cookie'] = setCookies;
       const corsOrigin = getSidecarCorsOrigin(req);
       headers['access-control-allow-origin'] = corsOrigin;
       headers['vary'] = appendVary(headers['vary'], 'Origin');
