@@ -149,6 +149,12 @@ class KwAccountWidget {
       sub.addEventListener('click', () => { this.closeMenu(); void this.openSubscribeModal(); });
       actions.append(sub);
     }
+    if (s.isAdmin) {
+      const admin = el('button', 'kw-menu-btn', '슈퍼어드민 열기');
+      admin.type = 'button';
+      admin.addEventListener('click', () => { location.assign('/admin'); });
+      actions.append(admin);
+    }
     const logout = el('button', 'kw-menu-btn', '로그아웃');
     logout.type = 'button';
     logout.addEventListener('click', () => { void logoutKwAccount(); });

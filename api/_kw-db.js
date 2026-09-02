@@ -67,6 +67,18 @@ CREATE TABLE IF NOT EXISTS kw_payments (
 );
 CREATE INDEX IF NOT EXISTS kw_payments_user_idx ON kw_payments(user_id, id DESC);
 CREATE INDEX IF NOT EXISTS kw_users_renew_idx ON kw_users(live_until) WHERE sub_auto_renew;
+CREATE TABLE IF NOT EXISTS kw_user_activity (
+  day DATE NOT NULL,
+  user_id BIGINT NOT NULL REFERENCES kw_users(id),
+  hits INT NOT NULL DEFAULT 1,
+  PRIMARY KEY (day, user_id)
+);
+CREATE TABLE IF NOT EXISTS kw_visitor_activity (
+  day DATE NOT NULL,
+  visitor TEXT NOT NULL,
+  hits INT NOT NULL DEFAULT 1,
+  PRIMARY KEY (day, visitor)
+);
 `;
 
 /** 스키마 보장(멱등). 프로세스당 1회. */
@@ -153,3 +165,36 @@ export function userToSession(row) {
  * @property {boolean} sub_auto_renew
  * @property {number} sub_fail_count
  */
+
+/** 오늘 날짜(KST, YYYY-MM-DD) — 일별 집계 버킷은 전부 한국 시간 기준. */
+export function kstToday(nowMs = Date.now()) {
+  return new Date(nowMs + 9 * 3600 * 1000).toISOString().slice(0, 10);
+}
+
+/** 로그인 사용자의 일별 활동 1건 기록(같은 날은 hits 만 증가). 실패해도 호출자를 막지 않는다. */
+export async function recordUserActivity(userId) {
+  try {
+    await q(
+      `INSERT INTO kw_user_activity (day, user_id) VALUES ($1::date, $2)
+       ON CONFLICT (day, user_id) DO UPDATE SET hits = kw_user_activity.hits + 1`,
+      [kstToday(), userId],
+    );
+  } catch (e) { console.warn('[kw-db] user activity skipped:', e.message); }
+}
+
+/** 비로그인 방문자의 일별 활동 — 원본 IP·UA 는 저장하지 않고 날짜별 해시만 남긴다. */
+export async function recordVisitorActivity(req) {
+  try {
+    const day = kstToday();
+    const xff = (req.headers.get('x-forwarded-for') || '').split(',')[0].trim();
+    const ip = (req.headers.get('x-real-ip') || '').trim() || xff || 'unknown';
+    const ua = (req.headers.get('user-agent') || '').slice(0, 200);
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${day}|${ip}|${ua}`));
+    const visitor = Array.from(new Uint8Array(buf)).slice(0, 16).map((b) => b.toString(16).padStart(2, '0')).join('');
+    await q(
+      `INSERT INTO kw_visitor_activity (day, visitor) VALUES ($1::date, $2)
+       ON CONFLICT (day, visitor) DO UPDATE SET hits = kw_visitor_activity.hits + 1`,
+      [day, visitor],
+    );
+  } catch (e) { console.warn('[kw-db] visitor activity skipped:', e.message); }
+}

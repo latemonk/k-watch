@@ -2,7 +2,8 @@
 // (결제·체험 만료가 핫패스 쿠키에 반영되는 유일한 경로 — 프론트가 부트·결제 후·10분마다 호출).
 import { json, publicOrigin, isLocalOrigin } from '../_kw-http.js';
 import { readUserSession, issueUserSessionToken, userSessionSetCookie, userSessionClearCookie, gateDisabled } from '../_kw-user-session.js';
-import { dbEnabled, getUserById, userToSession, trialDays } from '../_kw-db.js';
+import { dbEnabled, getUserById, userToSession, trialDays, recordUserActivity, recordVisitorActivity } from '../_kw-db.js';
+import { isAdminEmail } from '../_kw-admin.js';
 
 export const config = { runtime: 'edge' };
 
@@ -17,7 +18,10 @@ export default async function handler(req) {
     serverTime: now,
   };
   const session = await readUserSession(req);
-  if (!session) return json(200, { ...base, loggedIn: false, mode: base.gateDisabled ? 'live' : 'demo' });
+  if (!session) {
+    if (dbEnabled()) void recordVisitorActivity(req);
+    return json(200, { ...base, loggedIn: false, mode: base.gateDisabled ? 'live' : 'demo' });
+  }
 
   let fresh = session;
   let setCookie = null;
@@ -26,6 +30,7 @@ export default async function handler(req) {
       const row = await getUserById(session.uid);
       if (!row) return json(200, { ...base, loggedIn: false, mode: base.gateDisabled ? 'live' : 'demo' }, { 'Set-Cookie': userSessionClearCookie() });
       const s = userToSession(row);
+      void recordUserActivity(row.id);
       const issued = await issueUserSessionToken(s);
       fresh = issued.payload;
       setCookie = userSessionSetCookie(issued.token, { secure: !isLocalOrigin(publicOrigin(req)) });
@@ -47,5 +52,6 @@ export default async function handler(req) {
     plan: fresh.plan,
     liveUntil: fresh.until || null,
     mode: live ? 'live' : 'demo',
+    isAdmin: isAdminEmail(fresh.email),
   }, setCookie ? { 'Set-Cookie': setCookie } : {});
 }

@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>슈퍼어드민 — K-Watch</title>
+<link rel="icon" type="image/png" sizes="32x32" href="/favico/favicon-32x32.png">
+<style>
+:root{--bg:#0a0a0a;--panel:#111;--panel2:#161616;--border:#2a2a2a;--text:#e8e8e8;--text2:#bdbdbd;--dim:#888;--muted:#666;--accent:#3987e5;--accent-dim:#1f4c85;--good:#3fb950;--warn:#d29922;--bad:#f85149}
+*{box-sizing:border-box}
+html{word-break:keep-all;overflow-wrap:break-word}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.55 -apple-system,BlinkMacSystemFont,system-ui,"Apple SD Gothic Neo","Pretendard","Noto Sans KR",Roboto,sans-serif}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+.top{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 22px;border-bottom:1px solid var(--border);background:var(--panel);position:sticky;top:0;z-index:2}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:16px}
+.brand img{width:22px;height:22px;border-radius:5px}
+.brand small{color:var(--dim);font-weight:500;margin-left:6px}
+.top-right{display:flex;align-items:center;gap:10px;color:var(--dim);font-size:13px;white-space:nowrap}
+.btn{background:var(--panel2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:7px 12px;font:inherit;font-size:13px;cursor:pointer}
+.btn:hover{border-color:#555}
+.btn-primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+.wrap{max-width:1240px;margin:0 auto;padding:22px}
+.state{padding:80px 20px;text-align:center;color:var(--text2)}
+.state h2{margin:0 0 8px;font-size:20px;color:var(--text)}
+.state p{margin:0 0 20px;color:var(--dim)}
+h2.sec{font-size:15px;color:var(--text2);margin:30px 0 10px;font-weight:600;display:flex;align-items:baseline;gap:10px}
+h2.sec small{color:var(--muted);font-weight:400;font-size:12px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
+.tile{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:14px 16px;min-width:0}
+.tile .label{font-size:12px;color:var(--dim);margin-bottom:6px}
+.tile .value{font-size:28px;font-weight:600;line-height:1.1;letter-spacing:-.01em}
+.tile .value small{font-size:14px;color:var(--dim);font-weight:500;margin-left:3px}
+.tile .sub{margin-top:8px;font-size:12px;color:var(--dim);display:flex;flex-wrap:wrap;gap:4px 12px}
+.tile .sub b{color:var(--text2);font-weight:600;font-variant-numeric:tabular-nums}
+.tile.hero .value{font-size:40px}
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.scroll{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{padding:9px 12px;border-bottom:1px solid var(--border);text-align:left;vertical-align:middle;white-space:nowrap}
+th{color:var(--dim);font-weight:500;font-size:12px;background:var(--panel2);position:sticky;top:0}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+tr:last-child td{border-bottom:0}
+tr.today td{background:#0f1622}
+.bar{display:inline-block;height:8px;border-radius:0 4px 4px 0;background:var(--accent);vertical-align:middle;margin-right:8px;min-width:0}
+.bar.dim{background:var(--accent-dim)}
+.cell-bar{display:flex;align-items:center;gap:0;min-width:120px}
+.cell-bar span.n{font-variant-numeric:tabular-nums;color:var(--text2);min-width:32px;text-align:right}
+.badge{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:2px 8px;font-size:11px;font-weight:600;border:1px solid var(--border);color:var(--text2)}
+.badge::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--muted)}
+.badge.pro::before{background:var(--good)}.badge.trial::before{background:var(--accent)}.badge.expired::before{background:var(--warn)}.badge.paid::before{background:var(--good)}.badge.failed::before{background:var(--bad)}.badge.pending::before{background:var(--warn)}
+.user{display:flex;align-items:center;gap:8px;min-width:0}
+.user img{width:22px;height:22px;border-radius:50%;background:#222;flex:none}
+.user .id{min-width:0}
+.user .name{color:var(--text)}
+.user .email{color:var(--dim);font-size:12px}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:var(--dim)}
+.empty{padding:26px;text-align:center;color:var(--muted);font-size:13px}
+.foot{margin:36px 0 10px;color:var(--muted);font-size:12px;line-height:1.7}
+@media (max-width:640px){.wrap{padding:14px}.tile .value{font-size:24px}.tile.hero .value{font-size:32px}.top{padding:12px 14px}}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand"><img src="/favico/android-chrome-96x96.png" alt="">K-Watch<small>슈퍼어드민</small></div>
+  <div class="top-right"><span id="who"></span><span id="stamp"></span><button class="btn" id="refresh" type="button">새로고침</button><a class="btn" href="/">대시보드</a></div>
+</header>
+<main class="wrap" id="app"><div class="state"><h2>불러오는 중이에요</h2><p>운영 현황을 가져오고 있어요.</p></div></main>
+<script src="/admin.js"></script>
+</body>
+</html>

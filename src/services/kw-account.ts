@@ -17,6 +17,7 @@ export interface KwAccountState {
   payEnabled: boolean;
   trialDays: number;
   subscription: { autoRenew: boolean; cardLabel: string | null; failCount: number; hasBillingKey: boolean } | null;
+  isAdmin: boolean;
 }
 
 export interface KwProduct { id: string; name: string; priceKrw: number; days: number }
@@ -25,7 +26,7 @@ const REFRESH_MS = 10 * 60 * 1000;
 const listeners = new Set<(s: KwAccountState) => void>();
 let state: KwAccountState = {
   loaded: false, loggedIn: false, mode: 'demo', user: null, plan: 'none', liveUntil: null,
-  googleEnabled: false, payEnabled: false, trialDays: 7, subscription: null,
+  googleEnabled: false, payEnabled: false, trialDays: 7, subscription: null, isAdmin: false,
 };
 let timer: ReturnType<typeof setInterval> | null = null;
 let inflight: Promise<KwAccountState> | null = null;
@@ -58,6 +59,7 @@ export async function refreshKwAccount(): Promise<KwAccountState> {
         payEnabled: Boolean(j.payEnabled),
         trialDays: Number(j.trialDays ?? 7),
         subscription: j.subscription ?? null,
+        isAdmin: Boolean(j.isAdmin),
       };
     } catch (e) {
       // 서버를 못 물으면 「데모」로 두되 loaded 는 올려 UI 가 멈추지 않게 한다
