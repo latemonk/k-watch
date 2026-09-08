@@ -1,12 +1,11 @@
 // K-Watch 슈퍼어드민 게이트 — 운영자 이메일 allowlist(KW_ADMIN_EMAILS, 쉼표 구분).
 // 비로그인=401, 로그인했지만 운영자 아님=404(존재를 숨김).
+// 기본값 없음(공개 레포에 운영자 이메일을 두지 않는다) — env 가 비어 있으면 운영자는 0명.
 import { json } from './_kw-http.js';
 import { readUserSession } from './_kw-user-session.js';
 
-const DEFAULT_ADMIN_EMAILS = 'charlespyo@gmail.com,pyo@ai3.kr';
-
 export function adminEmails() {
-  const raw = process.env.KW_ADMIN_EMAILS ?? DEFAULT_ADMIN_EMAILS;
+  const raw = String(process.env.KW_ADMIN_EMAILS || '');
   return raw.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
 }
 

@@ -12,7 +12,6 @@ export default async function handler(req) {
   const base = {
     googleEnabled: Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET),
     payEnabled: Boolean(process.env.TOSS_CLIENT_KEY && process.env.TOSS_SECRET_KEY && dbEnabled()),
-    devLoginEnabled: Boolean(process.env.KW_DEV_LOGIN_TOKEN),
     gateDisabled: gateDisabled(),
     trialDays: trialDays(),
     serverTime: now,

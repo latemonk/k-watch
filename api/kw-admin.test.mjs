@@ -10,18 +10,19 @@ const { issueUserSessionToken } = await import('./_kw-user-session.js');
 
 const reqWith = (token) => new Request('http://localhost/api/admin/stats', { headers: token ? { cookie: `kwu=${encodeURIComponent(token)}` } : {} });
 
-test('allowlist: 기본값에 charlespyo@gmail.com 포함, 대소문자·공백 무시', () => {
-  assert.ok(adminEmails().includes('charlespyo@gmail.com'));
-  assert.equal(isAdminEmail(' CharlesPyo@Gmail.com '), true);
+test('allowlist: 기본값 없음 — env 비어 있으면 운영자 0명(공개 레포에 이메일 상수 없음)', () => {
+  assert.deepEqual(adminEmails(), []);
   assert.equal(isAdminEmail('someone@example.com'), false);
+  assert.equal(isAdminEmail('other@example.com'), false);
   assert.equal(isAdminEmail(''), false);
 });
 
-test('allowlist: KW_ADMIN_EMAILS 가 있으면 기본값을 대체한다', () => {
+test('allowlist: KW_ADMIN_EMAILS 파싱 — 대소문자·공백 무시', () => {
   process.env.KW_ADMIN_EMAILS = 'a@x.io, b@y.io';
   try {
     assert.deepEqual(adminEmails(), ['a@x.io', 'b@y.io']);
-    assert.equal(isAdminEmail('charlespyo@gmail.com'), false);
+    assert.equal(isAdminEmail(' A@X.io '), true);
+    assert.equal(isAdminEmail('someone@example.com'), false);
   } finally { delete process.env.KW_ADMIN_EMAILS; }
 });
 
@@ -38,9 +39,19 @@ test('requireAdmin: 로그인했지만 운영자 아님 → 404(존재 숨김)',
   assert.equal(response.status, 404);
 });
 
-test('requireAdmin: 운영자 → 세션 반환', async () => {
-  const { token } = await issueUserSessionToken({ id: 1, email: 'charlespyo@gmail.com', liveUntil: 0 });
+test('requireAdmin: 운영자(env 목록) → 세션 반환', async () => {
+  process.env.KW_ADMIN_EMAILS = 'ops@example.com';
+  try {
+    const { token } = await issueUserSessionToken({ id: 1, email: 'ops@example.com', liveUntil: 0 });
+    const { session, response } = await requireAdmin(reqWith(token));
+    assert.equal(response, null);
+    assert.equal(session.email, 'ops@example.com');
+  } finally { delete process.env.KW_ADMIN_EMAILS; }
+});
+
+test('requireAdmin: env 비어 있으면 누구도 운영자가 아니다(404)', async () => {
+  const { token } = await issueUserSessionToken({ id: 1, email: 'someone@example.com', liveUntil: 0 });
   const { session, response } = await requireAdmin(reqWith(token));
-  assert.equal(response, null);
-  assert.equal(session.email, 'charlespyo@gmail.com');
+  assert.equal(session, null);
+  assert.equal(response.status, 404);
 });
