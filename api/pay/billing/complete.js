@@ -2,7 +2,7 @@
 import { json, readJson } from '../../_kw-http.js';
 import { readUserSession } from '../../_kw-user-session.js';
 import { dbEnabled, q } from '../../_kw-db.js';
-import { payEnabled, tossPost, PRODUCT, ORDER_PREFIX, cardLabelOf } from '../../_kw-toss.js';
+import { payEnabled, tossPost, PRODUCT, ORDER_PREFIX, cardLabelOf, tossUserMessage } from '../../_kw-toss.js';
 export const config = { runtime: 'edge' };
 
 export default async function handler(req) {
@@ -28,7 +28,7 @@ export default async function handler(req) {
     issued = await tossPost('/v1/billing/authorizations/issue', { authKey, customerKey });
   } catch (e) {
     console.warn('[kw-pay] issue billing key failed:', e.code, e.message);
-    return json(402, { error: 'billing_issue_failed', message: `카드 등록에 실패했어요. ${e.message || ''}`.trim() });
+    return json(402, { error: 'billing_issue_failed', message: tossUserMessage(e, '카드 등록에 실패했어요. 다시 시도해 주세요.') });
   }
 
   // 2) 첫 결제 — 주문 먼저 기록(멱등키 = orderId)
@@ -48,7 +48,7 @@ export default async function handler(req) {
     // 빌링키는 저장해 두되 자동갱신은 켜지 않는다(사용자가 다시 시도)
     await q(`UPDATE kw_users SET toss_billing_key = $1, toss_card_label = COALESCE(toss_card_label, $2) WHERE id = $3`, [issued.billingKey, cardLabelOf(issued), u.id]);
     console.warn('[kw-pay] first charge failed:', e.code, e.message);
-    return json(402, { error: 'charge_failed', message: `결제에 실패했어요. ${e.message || ''}`.trim() });
+    return json(402, { error: 'charge_failed', message: tossUserMessage(e) });
   }
 
   // 3) 이용권 연장 — 남은 체험·이용 기간 위에 얹는다(GREATEST)

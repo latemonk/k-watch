@@ -36,6 +36,27 @@ export async function tossPost(path, body, idempotencyKey) {
   return data;
 }
 
+// 토스 오류 → 사용자 안내문(토스체). 원문(code/message)은 서버 로그에만 남기고 화면엔 보내지 않는다.
+const TOSS_USER_MESSAGES = {
+  NOT_CONFIGURED: '결제가 준비되지 않았어요. 잠시 후 다시 시도해 주세요.',
+  INVALID_CARD_COMPANY: '지원하지 않는 카드사예요. 다른 카드로 시도해 주세요.',
+  INVALID_CARD_NUMBER: '카드 번호가 올바르지 않아요. 다시 확인해 주세요.',
+  INVALID_CARD_EXPIRATION: '카드 유효기간이 올바르지 않아요. 다시 확인해 주세요.',
+  INVALID_STOPPED_CARD: '정지된 카드예요. 카드사에 문의해 주세요.',
+  EXCEED_MAX_DAILY_PAYMENT_COUNT: '하루 결제 한도를 넘었어요. 내일 다시 시도해 주세요.',
+  EXCEED_MAX_PAYMENT_AMOUNT: '카드 결제 한도를 넘었어요. 다른 카드로 시도해 주세요.',
+  NOT_ENOUGH_BALANCE: '잔액이 부족해요. 다른 카드로 시도해 주세요.',
+  REJECT_CARD_COMPANY: '카드사에서 결제를 거절했어요. 카드사에 문의해 주세요.',
+  REJECT_CARD_PAYMENT: '카드사에서 결제를 거절했어요. 다른 카드로 시도해 주세요.',
+  INVALID_AUTHORIZE_AUTH: '카드 인증 정보가 만료됐어요. 카드 등록을 다시 진행해 주세요.',
+  ALREADY_PROCESSED_PAYMENT: '이미 처리된 결제예요. 이용권 상태를 확인해 주세요.',
+  UNAUTHORIZED_KEY: '결제가 준비되지 않았어요. 잠시 후 다시 시도해 주세요.',
+};
+export function tossUserMessage(err, fallback = '결제에 실패했어요. 잠시 후 다시 시도해 주세요.') {
+  const code = err && err.code ? String(err.code) : '';
+  return TOSS_USER_MESSAGES[code] || fallback;
+}
+
 export function cardLabelOf(pay) {
   const c = pay && pay.card;
   if (!c) return null;
