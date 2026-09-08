@@ -10,10 +10,15 @@ export function redirect(location, extraHeaders = {}) {
   return new Response(null, { status: 302, headers: { Location: location, 'Cache-Control': 'no-store', ...extraHeaders } });
 }
 
-/** 브라우저가 보는 공개 오리진(nginx 뒤라 req.url 의 scheme 은 http 로 보인다) */
+/** 브라우저가 보는 공개 오리진(nginx 뒤라 req.url 의 scheme 은 http 로 보인다).
+ *  운영(KW_ENV=production)에서는 KW_PUBLIC_ORIGIN 만 신뢰한다 — 요청 헤더(X-Forwarded-Host/Host)
+ *  폴백은 개발·로컬 전용(호스트 헤더 주입으로 OAuth 실패 리다이렉트·redirect_uri 가 바뀌는 것 차단). */
 export function publicOrigin(req) {
   const env = String(process.env.KW_PUBLIC_ORIGIN || '').trim().replace(/\/+$/, '');
   if (env) return env;
+  if (String(process.env.KW_ENV || '').trim().toLowerCase() === 'production') {
+    throw new Error('KW_PUBLIC_ORIGIN is required in production');
+  }
   try {
     const u = new URL(req.url);
     const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || u.host;

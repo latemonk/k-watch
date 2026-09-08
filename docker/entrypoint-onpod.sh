@@ -16,6 +16,10 @@ fi
 
 gen() { node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"; }
 
+# 운영(KW_ENV=production) 부팅 검증 — 뒷문 토큰이 남아 있거나 공개 오리진·세션 서명키가
+# 없으면 기동을 거부한다(api/_kw-env.js 와 단일 소스). 핸들러는 지연 로드라 여기서 한 번 강제.
+node --input-type=module -e "const m = await import('/app/api/_kw-env.js'); m.assertBootEnv();"
+
 export REDIS_PASSWORD="${REDIS_PASSWORD:-$(gen)}"
 export REDIS_TOKEN="${REDIS_TOKEN:-$(gen)}"
 export RELAY_SHARED_SECRET="${RELAY_SHARED_SECRET:-$(gen)}"
